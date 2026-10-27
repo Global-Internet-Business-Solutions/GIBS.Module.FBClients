@@ -1,0 +1,79 @@
+@using GIBS.Module.FBClients.Services
+@using GIBS.Module.FBClients.Models
+
+@namespace GIBS.Module.FBClients
+@inherits ModuleBase
+@inject IFBClientsService ClientFBClientsService
+@inject NavigationManager NavigationManager
+@inject IStringLocalizer<Index> Localizer
+
+@if (_FBClientss == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <ActionLink Action="Add" Security="SecurityAccessLevel.Edit" Text="Add FBClients" ResourceKey="Add" />
+    <br />
+    <br />
+    @if (@_FBClientss.Count != 0)
+    {
+        <Pager Items="@_FBClientss">
+            <Header>
+                <th style="width: 1px;">&nbsp;</th>
+                <th style="width: 1px;">&nbsp;</th>
+                <th>@Localizer["Name"]</th>
+            </Header>
+            <Row>
+                <td><ActionLink Action="Edit" Parameters="@($"id=" + context.FBClientsId.ToString())" ResourceKey="Edit"  /></td>
+                <td><ActionDialog Header="Delete FBClients" Message="Are You Sure You Wish To Delete This FBClients?" Action="Delete" Security="SecurityAccessLevel.Edit" Class="btn btn-danger" OnClick="@(async () => await Delete(context))" ResourceKey="Delete"  Id="@context.FBClientsId.ToString()" /></td>
+                <td>@context.Name</td>
+            </Row>
+        </Pager>
+    }
+    else
+    {
+        <p>@Localizer["Message.DisplayNone"]</p>
+    }
+}
+
+@code {
+    public override string RenderMode => RenderModes.Static;
+
+    public override List<Resource> Resources => new List<Resource>()
+    {
+        new Stylesheet("_content/GIBS.Module.FBClients/Module.css"),
+        new Script("_content/GIBS.Module.FBClients/Module.js")
+    };
+
+    List<FBClients> _FBClientss;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _FBClientss = await ClientFBClientsService.GetFBClientssAsync(ModuleState.ModuleId);
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Loading FBClients {Error}", ex.Message);
+            AddModuleMessage(Localizer["Message.LoadError"], MessageType.Error);
+        }
+    }
+
+    private async Task Delete(FBClients FBClients)
+    {
+        try
+        {
+            await ClientFBClientsService.DeleteFBClientsAsync(FBClients.FBClientsId, ModuleState.ModuleId);
+            await logger.LogInformation("FBClients Deleted {FBClients}", FBClients);
+            _FBClientss = await ClientFBClientsService.GetFBClientssAsync(ModuleState.ModuleId);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Deleting FBClients {FBClients} {Error}", FBClients, ex.Message);
+            AddModuleMessage(Localizer["Message.DeleteError"], MessageType.Error);
+        }
+    }
+}

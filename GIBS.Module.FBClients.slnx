@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Client\GIBS.Module.FBClients.Client.csproj" />
+  <Project Path="Server\GIBS.Module.FBClients.Server.csproj" />
+  <Project Path="Shared\GIBS.Module.FBClients.Shared.csproj" />
+  <Project Path="Package\GIBS.Module.FBClients.Package.csproj" />
+</Solution>
