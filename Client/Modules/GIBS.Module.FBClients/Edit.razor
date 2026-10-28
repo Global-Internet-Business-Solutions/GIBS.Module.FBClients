@@ -1142,6 +1142,10 @@
                     <table class="table table-striped table-bordered align-middle">
                         <thead>
                             <tr>
+                                @if (_settings.ShowSendText)
+                                {
+                                    <th>@Localizer["OrderText.Send"]</th>
+                                }
                                 <th>Edit</th>
                                 @if (_canDeleteRecord)
                                 {
@@ -1160,7 +1164,7 @@
                             @if (_visits.Count == 0)
                             {
                                 <tr>
-                                    <td colspan="9" class="text-center text-muted">No visits recorded for this client.</td>
+                                    <td colspan="@(8 + (_canDeleteRecord ? 1 : 0) + (_settings.ShowSendText ? 1 : 0))" class="text-center text-muted">No visits recorded for this client.</td>
                                 </tr>
                             }
                             else
@@ -1168,6 +1172,20 @@
                                 @foreach (var visit in _visits)
                                 {
                                     <tr>
+                                        @if (_settings.ShowSendText)
+                                        {
+                                            <td>
+                                                @if (visit.VisitDate == DateOnly.FromDateTime(DateTime.Today)
+                                                    && (visit.OrderStatusCode ?? 0) == 0
+                                                    && string.Equals(_client.ClientPhoneType, "Cell", StringComparison.OrdinalIgnoreCase)
+                                                    && !string.IsNullOrWhiteSpace(_client.ClientPhone))
+                                                {
+                                                    <button type="button" class="btn btn-sm btn-outline-primary"
+                                                            disabled="@(_client.IsLocked == true || _signatureActive || _signatureBusy || _orderTextBlockedVisits.Contains(visit.VisitId))"
+                                                            @onclick="@(() => SendOrderText(visit))">@Localizer["OrderText.Send"]</button>
+                                                }
+                                            </td>
+                                        }
                                         <td>
                                             <button type="button" class="btn btn-sm btn-outline-primary" disabled="@(_signatureActive || _signatureBusy)" @onclick="@(() => EditVisit(visit))">Edit</button>
                                         </td>
@@ -1274,6 +1292,7 @@
     private ElementReference _signatureCanvas;
     private bool _signatureActive;
     private bool _signatureBusy;
+    private readonly HashSet<int> _orderTextBlockedVisits = new();
 
     // Option Lists (matching DNN Lists)
     private readonly List<string> _clientTypeOptions = new() { "Individual", "Group Home", "Pallet" };
@@ -2532,6 +2551,64 @@
         {
             await logger.LogError(ex, "Error Saving Visit {Error}", ex.Message);
             AddModuleMessage("Error saving visit.", MessageType.Error);
+        }
+        finally
+        {
+            _signatureBusy = false;
+        }
+    }
+
+    private async Task SendOrderText(FBClientsVisits visit)
+    {
+        if (_signatureActive || _signatureBusy)
+        {
+            AddModuleMessage(Localizer["Signature.FinishFirst"], MessageType.Warning);
+            return;
+        }
+        if (_orderTextBlockedVisits.Contains(visit.VisitId))
+        {
+            AddModuleMessage(Localizer["OrderText.Unconfirmed"], MessageType.Warning);
+            return;
+        }
+
+        _signatureBusy = true;
+        try
+        {
+            var result = await ClientFBClientsService.SendFBClientsOrderTextAsync(visit.VisitId, ModuleState.ModuleId);
+            if (result == null)
+            {
+                throw new InvalidOperationException("The order text endpoint returned no result.");
+            }
+            if (!result.Accepted)
+            {
+                if (result.AcceptanceUnconfirmed)
+                {
+                    _orderTextBlockedVisits.Add(visit.VisitId);
+                }
+                AddModuleMessage(Localizer["OrderText.Rejected", result.ErrorMessage], MessageType.Error);
+                return;
+            }
+
+            _orderTextBlockedVisits.Add(visit.VisitId);
+            if (result.StatusUpdated)
+            {
+                visit.OrderStatusCode = 1;
+                if (_editingVisit.VisitId == visit.VisitId)
+                {
+                    _editingVisit.OrderStatusCode = 1;
+                }
+                AddModuleMessage(Localizer["OrderText.Accepted"], MessageType.Success);
+            }
+            else
+            {
+                AddModuleMessage(Localizer["OrderText.StatusWarning", result.MessageSid, result.ErrorMessage], MessageType.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            _orderTextBlockedVisits.Add(visit.VisitId);
+            await logger.LogError(ex, "Error Sending Order Text {VisitId}", visit.VisitId);
+            AddModuleMessage(Localizer["OrderText.Unconfirmed"], MessageType.Error);
         }
         finally
         {

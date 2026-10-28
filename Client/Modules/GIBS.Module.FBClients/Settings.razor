@@ -263,7 +263,7 @@
                 <div class="row mb-1 align-items-center">
                     <Label Class="col-sm-3" For="txtTwilioAuthToken" HelpText="Twilio AuthToken" ResourceKey="lblTwilioAuthToken" ResourceType="@resourceType">Twilio AuthToken:</Label>
                     <div class="col-sm-9">
-                        <input id="txtTwilioAuthToken" type="text" class="form-control" @bind="@_settings.TwilioAuthToken" />
+                        <input id="txtTwilioAuthToken" type="password" autocomplete="new-password" class="form-control" @bind="@_settings.TwilioAuthToken" />
                     </div>
                 </div>
                 <div class="row mb-1 align-items-center">
@@ -273,7 +273,7 @@
                     </div>
                 </div>
                 <div class="row mb-1 align-items-center">
-                    <Label Class="col-sm-3" For="txtClientOrderPage" HelpText="Client Order Page" ResourceKey="lblClientOrderPage" ResourceType="@resourceType">Client Order Page:</Label>
+                    <Label Class="col-sm-3" For="txtClientOrderPage" HelpText="HTTPS URL prefix. The visit-client key is appended, as in the DNN module." ResourceKey="lblClientOrderPage" ResourceType="@resourceType">Client Order Page:</Label>
                     <div class="col-sm-9">
                         <input id="txtClientOrderPage" type="text" class="form-control" @bind="@_settings.ClientOrderPage" />
                     </div>
@@ -469,6 +469,8 @@
 
             var settings = await SettingService.GetModuleSettingsAsync(ModuleState.ModuleId);
             _settings.ApplyToDictionary(settings);
+            settings[FBClientsSettings.Keys.TwilioAccountSid] = "[Private]" + _settings.TwilioAccountSid;
+            settings[FBClientsSettings.Keys.TwilioAuthToken] = "[Private]" + _settings.TwilioAuthToken;
             await SettingService.UpdateModuleSettingsAsync(settings, ModuleState.ModuleId);
         }
         catch (Exception ex)

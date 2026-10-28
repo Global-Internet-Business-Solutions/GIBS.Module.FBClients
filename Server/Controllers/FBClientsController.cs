@@ -286,6 +286,18 @@ namespace GIBS.Module.FBClients.Controllers
             return null;
         }
 
+        [HttpPost("visit/{id}/{moduleid}/order-text")]
+        [Authorize(Policy = PolicyNames.EditModule)]
+        public async Task<ActionResult<Models.FBClientsOrderTextResult>> SendOrderText(int id, int moduleid)
+        {
+            if (!IsAuthorizedEntityId(EntityNames.Module, moduleid))
+            {
+                _logger.Log(LogLevel.Error, this, LogFunction.Security, "Unauthorized Order Text Attempt {VisitId} {ModuleId}", id, moduleid);
+                return Forbid();
+            }
+            return await _FBClientsService.SendFBClientsOrderTextAsync(id, moduleid);
+        }
+
         [HttpDelete("visit/{id}/{moduleid}")]
         [Authorize(Policy = PolicyNames.EditModule)]
         public async Task DeleteVisit(int id, int moduleid)

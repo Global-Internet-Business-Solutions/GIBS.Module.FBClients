@@ -25,6 +25,7 @@ namespace GIBS.Module.FBClients.Services
         private readonly ILogManager _logger;
         private readonly IHttpContextAccessor _accessor;
         private readonly Alias _alias;
+        private readonly IFBClientsOrderTextSender _orderTextSender;
 
         public ServerFBClientsService(
             IFBClientsRepository FBClientsRepository,
@@ -34,7 +35,8 @@ namespace GIBS.Module.FBClients.Services
             IFileRepository fileRepository,
             ITenantManager tenantManager,
             ILogManager logger,
-            IHttpContextAccessor accessor)
+            IHttpContextAccessor accessor,
+            IFBClientsOrderTextSender orderTextSender)
         {
             _FBClientsRepository = FBClientsRepository;
             _userPermissions = userPermissions;
@@ -44,6 +46,7 @@ namespace GIBS.Module.FBClients.Services
             _logger = logger;
             _accessor = accessor;
             _alias = tenantManager.GetAlias();
+            _orderTextSender = orderTextSender;
         }
 
         private bool IsClientInModule(int fbClientsId, int moduleId)
@@ -309,6 +312,114 @@ namespace GIBS.Module.FBClients.Services
                 _logger.Log(LogLevel.Error, this, LogFunction.Security, "Unauthorized FBClientsVisits Delete Attempt {VisitId} {ModuleId}", VisitId, ModuleId);
             }
             return Task.CompletedTask;
+        }
+
+        public async Task<FBClientsOrderTextResult> SendFBClientsOrderTextAsync(int VisitId, int ModuleId)
+        {
+            FBClientsOrderTextResult Reject(string message)
+            {
+                _logger.Log(LogLevel.Warning, this, LogFunction.Other, "Order Text Not Sent {VisitId} {ModuleId}: {Reason}", VisitId, ModuleId, message);
+                return new FBClientsOrderTextResult { ErrorMessage = message };
+            }
+
+            if (!_userPermissions.IsAuthorized(_accessor.HttpContext.User, _alias.SiteId, EntityNames.Module, ModuleId, PermissionNames.Edit))
+            {
+                _logger.Log(LogLevel.Error, this, LogFunction.Security, "Unauthorized Order Text Attempt {VisitId} {ModuleId}", VisitId, ModuleId);
+                return new FBClientsOrderTextResult { ErrorMessage = "You do not have permission to send order texts." };
+            }
+
+            var visit = _FBClientsRepository.GetFBClientsVisit(VisitId, false);
+            var client = visit == null ? null : _FBClientsRepository.GetFBClients(visit.FBClientsId, false);
+            if (client == null || client.ModuleId != ModuleId)
+            {
+                _logger.Log(LogLevel.Error, this, LogFunction.Security, "Invalid Order Text Visit {VisitId} {ModuleId}", VisitId, ModuleId);
+                return new FBClientsOrderTextResult { ErrorMessage = "The visit was not found in this module." };
+            }
+
+            var settings = FBClientsSettings.FromDictionary(_settingRepository.GetSettings(EntityNames.Module, ModuleId)
+                .ToDictionary(setting => setting.SettingName, setting => setting.SettingValue));
+            if (!settings.ShowSendText)
+            {
+                return Reject("Enable Show Send Text in module settings before sending order links.");
+            }
+            if (client.IsLocked == true)
+            {
+                return Reject("This client account is locked.");
+            }
+            if (visit.VisitDate != DateOnly.FromDateTime(DateTime.Today))
+            {
+                return Reject("Order links can only be sent for today's visits.");
+            }
+            if ((visit.OrderStatusCode ?? 0) != 0)
+            {
+                return Reject("An order link has already been sent or this order is already in progress. Refresh the visit history.");
+            }
+            if (!string.Equals(client.ClientPhoneType, "Cell", StringComparison.OrdinalIgnoreCase))
+            {
+                return Reject("Save the client's phone type as Cell before sending an order text.");
+            }
+            if (string.IsNullOrWhiteSpace(settings.TwilioAccountSid) || string.IsNullOrWhiteSpace(settings.TwilioAuthToken)
+                || string.IsNullOrWhiteSpace(settings.TwilioPhoneNumber))
+            {
+                return Reject("Configure the Twilio Account SID, Auth Token, and Phone Number in module settings.");
+            }
+
+            string to;
+            string from;
+            string body;
+            try
+            {
+                to = FBClientsOrderText.NormalizePhoneNumber(client.ClientPhone);
+                from = FBClientsOrderText.NormalizePhoneNumber(settings.TwilioPhoneNumber);
+                body = FBClientsOrderText.CreateMessage(settings.FBName, settings.ClientOrderPage, visit.VisitId, client.FBClientsId);
+            }
+            catch (ArgumentException ex)
+            {
+                return Reject(ex.Message);
+            }
+
+            string messageSid;
+            try
+            {
+                messageSid = await _orderTextSender.SendAsync(settings.TwilioAccountSid.Trim(), settings.TwilioAuthToken.Trim(), from, to, body);
+                if (string.IsNullOrWhiteSpace(messageSid))
+                {
+                    throw new InvalidOperationException("Twilio returned no message SID.");
+                }
+            }
+            catch (Twilio.Exceptions.ApiException ex)
+            {
+                _logger.Log(LogLevel.Error, this, LogFunction.Other, "Twilio Rejected Order Text {VisitId} {ModuleId} Code {Code}", VisitId, ModuleId, ex.Code);
+                return new FBClientsOrderTextResult { ErrorMessage = $"Twilio rejected the order text (code {ex.Code}). Check your Twilio console and configuration before retrying." };
+            }
+            catch (Exception ex)
+            {
+                // Provider exceptions can contain credentials, phone numbers, or the message body.
+                _logger.Log(LogLevel.Error, this, LogFunction.Other, "Order Text Acceptance Unconfirmed {VisitId} {ModuleId} ErrorType {ErrorType}", VisitId, ModuleId, ex.GetType().Name);
+                return new FBClientsOrderTextResult
+                {
+                    AcceptanceUnconfirmed = true,
+                    ErrorMessage = "Could not confirm Twilio acceptance. Check the Twilio console before retrying to avoid duplicate texts."
+                };
+            }
+
+            var result = new FBClientsOrderTextResult { Accepted = true, MessageSid = messageSid };
+            _logger.Log(LogLevel.Information, this, LogFunction.Other, "Twilio Accepted Order Text {VisitId} {ModuleId} {MessageSid}", VisitId, ModuleId, messageSid);
+            try
+            {
+                result.StatusUpdated = _FBClientsRepository.MarkVisitOrderLinkSent(VisitId);
+                if (!result.StatusUpdated)
+                {
+                    result.ErrorMessage = "Twilio accepted the text, but the visit status changed or the visit was removed. Refresh the history and do not resend the text.";
+                    _logger.Log(LogLevel.Warning, this, LogFunction.Other, "Order Text Status Not Updated {VisitId} {ModuleId} {MessageSid}", VisitId, ModuleId, messageSid);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Log(LogLevel.Error, this, LogFunction.Other, "Order Text Status Update Failed {VisitId} {ModuleId} {MessageSid} ErrorType {ErrorType}", VisitId, ModuleId, messageSid, ex.GetType().Name);
+                result.ErrorMessage = "Twilio accepted the text, but the visit status could not be saved. Do not resend the text; check the visit and Twilio console.";
+            }
+            return result;
         }
 
         public Task<List<Models.FBClientsChristmas>> GetFBClientsChristmasesAsync(int FBClientsId, int ModuleId)

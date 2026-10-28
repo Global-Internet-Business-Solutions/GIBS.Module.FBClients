@@ -34,6 +34,7 @@ namespace GIBS.Module.FBClients.Repository
         Models.FBClientsVisits AddFBClientsVisit(Models.FBClientsVisits FBClientsVisit);
         Models.FBClientsVisits UpdateFBClientsVisit(Models.FBClientsVisits FBClientsVisit);
         void DeleteFBClientsVisit(int VisitId);
+        bool MarkVisitOrderLinkSent(int VisitId);
 
         IEnumerable<Models.FBClientsChristmas> GetFBClientsChristmases(int FBClientsId);
         Models.FBClientsChristmas GetFBClientsChristmas(int xMasId);
@@ -276,6 +277,14 @@ namespace GIBS.Module.FBClients.Repository
             db.Entry(FBClientsVisit).State = EntityState.Modified;
             db.SaveChanges();
             return FBClientsVisit;
+        }
+
+        public bool MarkVisitOrderLinkSent(int VisitId)
+        {
+            using var db = _factory.CreateDbContext();
+            return db.FBClientsVisits
+                .Where(visit => visit.VisitId == VisitId && (visit.OrderStatusCode == null || visit.OrderStatusCode == 0))
+                .ExecuteUpdate(update => update.SetProperty(visit => visit.OrderStatusCode, (int?)1)) == 1;
         }
 
         public void DeleteFBClientsVisit(int VisitId)

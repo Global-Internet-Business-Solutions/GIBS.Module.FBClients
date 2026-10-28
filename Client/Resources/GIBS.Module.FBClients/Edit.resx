@@ -438,4 +438,19 @@
   <data name="Signature.Busy" xml:space="preserve">
     <value>Please wait for the current visit or signature operation to finish.</value>
   </data>
+  <data name="OrderText.Send" xml:space="preserve">
+    <value>Send Text</value>
+  </data>
+  <data name="OrderText.Accepted" xml:space="preserve">
+    <value>Twilio accepted the food-order text. Visit status is now Link Sent. Acceptance does not confirm delivery.</value>
+  </data>
+  <data name="OrderText.Rejected" xml:space="preserve">
+    <value>The order text was not confirmed: {0}</value>
+  </data>
+  <data name="OrderText.StatusWarning" xml:space="preserve">
+    <value>Twilio accepted message {0}. {1}</value>
+  </data>
+  <data name="OrderText.Unconfirmed" xml:space="preserve">
+    <value>The text may have been accepted, but its result could not be confirmed. Check the Twilio console before retrying to avoid duplicate texts. Reload this page only after checking.</value>
+  </data>
 </root>

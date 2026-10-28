@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Oqtane.Services;
 using Oqtane.Shared;
@@ -113,6 +115,15 @@ namespace GIBS.Module.FBClients.Services
         public async Task DeleteFBClientsVisitAsync(int VisitId, int ModuleId)
         {
             await DeleteAsync(CreateAuthorizationPolicyUrl($"{Apiurl}/visit/{VisitId}/{ModuleId}", EntityNames.Module, ModuleId));
+        }
+
+        public async Task<Models.FBClientsOrderTextResult> SendFBClientsOrderTextAsync(int VisitId, int ModuleId)
+        {
+            using var response = await GetHttpClient().PostAsync(
+                CreateAuthorizationPolicyUrl($"{Apiurl}/visit/{VisitId}/{ModuleId}/order-text", EntityNames.Module, ModuleId), null);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<Models.FBClientsOrderTextResult>()
+                ?? throw new InvalidOperationException("The order text endpoint returned no result.");
         }
 
         public async Task<List<Models.FBClientsChristmas>> GetFBClientsChristmasesAsync(int FBClientsId, int ModuleId)

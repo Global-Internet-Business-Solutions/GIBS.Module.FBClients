@@ -22,6 +22,7 @@ namespace GIBS.Module.FBClients.Startup
         public void ConfigureServices(IServiceCollection services)
         {
             services.AddTransient<IFBClientsService, ServerFBClientsService>();
+            services.AddTransient<IFBClientsOrderTextSender, TwilioOrderTextSender>();
             services.AddDbContextFactory<FBClientsContext>(opt => { }, ServiceLifetime.Transient);
         }
     }

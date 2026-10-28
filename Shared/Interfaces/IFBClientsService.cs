@@ -32,6 +32,7 @@ namespace GIBS.Module.FBClients.Services
         Task<Models.FBClientsVisits> AddFBClientsVisitAsync(Models.FBClientsVisits FBClientsVisit, int ModuleId);
         Task<Models.FBClientsVisits> UpdateFBClientsVisitAsync(Models.FBClientsVisits FBClientsVisit, int ModuleId);
         Task DeleteFBClientsVisitAsync(int VisitId, int ModuleId);
+        Task<Models.FBClientsOrderTextResult> SendFBClientsOrderTextAsync(int VisitId, int ModuleId);
 
         Task<List<Models.FBClientsChristmas>> GetFBClientsChristmasesAsync(int FBClientsId, int ModuleId);
         Task<Models.FBClientsChristmas> GetFBClientsChristmasAsync(int xMasId, int ModuleId);
