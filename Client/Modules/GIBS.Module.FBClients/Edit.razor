@@ -8,6 +8,7 @@
 @inject IFBClientsService ClientFBClientsService
 @inject ISettingService SettingService
 @inject IUserRoleService UserRoleService
+@inject IFileService _fileService
 @inject NavigationManager NavigationManager
 @inject IStringLocalizer<Edit> Localizer
 
@@ -15,6 +16,14 @@
 {
     @if (_id > 0)
     {
+        <input type="hidden" id="hidLabelContent" value="@GetLabelLine1()" />
+        <input type="hidden" id="hidLabelContent2" value="@GetLabelLine2()" />
+        <input type="hidden" id="hidLabelContent3" value="@GetLabelLine3()" />
+        <input type="hidden" id="hidLabelContentBarCode" value="@GetBarcodeClientIdNumber()" />
+        <input type="hidden" id="hidPrintShoppingLabelQuantity" value="@GetShoppingLabelCopies()" />
+        <input type="hidden" id="hidLabelXML" value="@ShoppingLabelXml" />
+        <input type="hidden" id="hidLabelBarCode" value="@BarcodeLabelXml" />
+
         <div class="row mb-2 border rounded bg-light p-2 align-items-center">
             <div class="col-md-5 ClientNameHeader">
                 @if (_settings.ShowPhotoID)
@@ -59,11 +68,11 @@
                 <div class="mt-2">
                     @if (_settings.ShowPrintShoppingLabel)
                     {
-                        <button type="button" class="btn btn-outline-primary btn-sm me-1" @onclick="PrintShoppingLabel">Print Shopping Label</button>
+                        <button id="printDivLabel" type="button" class="btn btn-outline-primary btn-sm me-1" @onclick="PrintShoppingLabel">Print Shopping Label</button>
                     }
                     @if (_settings.ShowPrintBarCodeLabel)
                     {
-                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="PrintBarcodeLabel">Print Barcode Label</button>
+                        <button id="printDivBarCodeLabel" type="button" class="btn btn-outline-primary btn-sm" @onclick="PrintBarcodeLabel">Print Barcode Label</button>
                     }
                 </div>
             </div>
@@ -1177,7 +1186,9 @@
 
     public override List<Resource> Resources => new List<Resource>()
     {
-        new Stylesheet("_content/GIBS.Module.FBClients/Module.css")
+        new Stylesheet("_content/GIBS.Module.FBClients/Module.css"),
+        new Script("_content/GIBS.Module.FBClients/dymo.connect.framework.js"),
+        new Script("_content/GIBS.Module.FBClients/Module.js?v=1.0.0")
     };
 
     private bool _initialized;
@@ -1542,11 +1553,23 @@
             }
         }
 
-        // Photo resolution (IDPhoto first, fallback to ClientPhoto)
+        // Photo resolution (IDPhoto first, fallback to ClientPhoto, then Oqtane IDCardImagePath folder)
         var photoBytes = _idPhotos.FirstOrDefault()?.IDPhoto ?? _client.ClientPhoto;
-        _clientPhotoDataUrl = (photoBytes != null && photoBytes.Length > 0)
-            ? $"data:image/jpeg;base64,{Convert.ToBase64String(photoBytes)}"
-            : string.Empty;
+        if (photoBytes != null && photoBytes.Length > 0)
+        {
+            _clientPhotoDataUrl = $"data:image/jpeg;base64,{Convert.ToBase64String(photoBytes)}";
+        }
+        else if (int.TryParse(_settings.IDCardImagePath, out var folderId) && folderId > 0)
+        {
+            var savedFile = await _fileService.GetFileAsync(folderId, $"{_id}.jpg");
+            _clientPhotoDataUrl = savedFile != null && !string.IsNullOrWhiteSpace(savedFile.Url)
+                ? $"{savedFile.Url}?v={DateTime.UtcNow.Ticks}"
+                : string.Empty;
+        }
+        else
+        {
+            _clientPhotoDataUrl = string.Empty;
+        }
 
         RecalculateHeaderAndValidation();
         ResetFamilyMemberForm();
@@ -2397,14 +2420,164 @@
         _ => "Standard Visit"
     };
 
+    private const string ShoppingLabelXml = @"<?xml version=""1.0"" encoding=""utf-8""?><DesktopLabel Version=""1"">  <DYMOLabel Version=""3""><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>Address</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.23</X><Y>0.06</Y></DYMOPoint><Size><Width>3.21</Width><Height>0.9966666</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><TextObject><Name>Line_1</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A=""0"" R=""1"" G=""1"" B=""1""></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush>  <Color A=""0"" R=""1"" G=""1"" B=""1""></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left=""0"" Top=""0"" Right=""0"" Bottom=""0"" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan>  <Text>Enter Text</Text>  <FontInfo><FontName>Arial</FontName><FontSize>23.4</FontSize><IsBold>False</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush>  <SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color>  </SolidColorBrush></FontBrush>  </FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>0.3867604</X><Y>0.0716153</Y></DYMOPoint><Size><Width>2.726479</Width><Height>0.3758107</Height></Size></ObjectLayout></TextObject><TextObject><Name>Line_2</Name><Brushes><BackgroundBrush><SolidColorBrush>  <Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush>  <Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush>  <Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush>  <Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left=""0"" Top=""0"" Right=""0"" Bottom=""0"" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan>  <Text>ABC</Text>  <FontInfo><FontName>Segoe UI</FontName><FontSize>19.3</FontSize><IsBold>False</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush>  <SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color>  </SolidColorBrush></FontBrush>  </FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>0.2437118</X><Y>0.3820833</Y></DYMOPoint><Size><Width>3.046935</Width><Height>0.3600001</Height></Size></ObjectLayout></TextObject><TextObject><Name>Line_3</Name><Brushes><BackgroundBrush><SolidColorBrush>  <Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush>  <Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush>  <Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush>  <Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left=""0"" Top=""0"" Right=""0"" Bottom=""0"" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan>  <Text>ABC</Text>  <FontInfo><FontName>Segoe UI</FontName><FontSize>21.2</FontSize><IsBold>False</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush>  <SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color>  </SolidColorBrush></FontBrush>  </FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>0.5063462</X><Y>0.6558337</Y></DYMOPoint><Size><Width>2.438336</Width><Height>0.3979165</Height></Size></ObjectLayout></TextObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>";
+
+    private const string BarcodeLabelXml = @"<?xml version=""1.0"" encoding=""utf-8""?><DesktopLabel Version=""1""><DYMOLabel Version=""3""><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>Address</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.23</X><Y>0.06</Y></DYMOPoint><Size><Width>3.21</Width><Height>0.9966666</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><TextObject><Name>TextObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left=""0"" Top=""0"" Right=""0"" Bottom=""0"" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>ABC</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>25.1</FontSize><IsBold>False</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>0.25</X><Y>0.06041637</Y></DYMOPoint><Size><Width>3.006255</Width><Height>0.4683344</Height></Size></ObjectLayout></TextObject><BarcodeObject><Name>BarcodeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A=""1"" R=""1"" G=""1"" B=""1""></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left=""0"" Top=""0"" Right=""0"" Bottom=""0"" /></Margin><BarcodeFormat>Code128Auto</BarcodeFormat><Data><DataString>123</DataString></Data><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><Size>SmallMedium</Size><TextPosition>Bottom</TextPosition><FontInfo><FontName>Arial</FontName><FontSize>12</FontSize><IsBold>False</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FontBrush></FontInfo><ObjectLayout><DYMOPoint><X>0.2595834</X><Y>0.5287508</Y></DYMOPoint><Size><Width>3.03293</Width><Height>0.527916</Height></Size></ObjectLayout></BarcodeObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+        if (firstRender)
+        {
+            await EnsureDymoPrintScriptsAsync();
+        }
+    }
+
+    private async Task EnsureDymoPrintScriptsAsync()
+    {
+        var interop = new Oqtane.UI.Interop(JSRuntime);
+        await interop.IncludeScript(
+            "gibs-fbclients-dymo-inline",
+            "",
+            "",
+            "",
+            @"window.GIBS = window.GIBS || {};
+window.GIBS.FBClients = window.GIBS.FBClients || {};
+if (!window.GIBS.FBClients.ensureDymoLoaded) {
+    window.GIBS.FBClients.ensureDymoLoaded = function () {
+        if (typeof dymo !== 'undefined' && dymo.label && dymo.label.framework) {
+            return Promise.resolve();
+        }
+        return new Promise(function (resolve, reject) {
+            var existing = document.querySelector('script[data-gibs-dymo=""true""]');
+            if (existing) {
+                existing.addEventListener('load', function () { resolve(); });
+                existing.addEventListener('error', function () { reject(new Error('Failed to load DYMO Connect Framework script.')); });
+                return;
+            }
+            var script = document.createElement('script');
+            script.type = 'text/javascript';
+            script.src = '/_content/GIBS.Module.FBClients/dymo.connect.framework.js';
+            script.setAttribute('data-gibs-dymo', 'true');
+            script.onload = function () { resolve(); };
+            script.onerror = function () { reject(new Error('Failed to load DYMO Connect Framework script.')); };
+            document.head.appendChild(script);
+        });
+    };
+}
+if (!window.GIBS.FBClients.printShoppingLabel) {
+    window.GIBS.FBClients.printShoppingLabel = async function (line1, line2, line3, howmanycopies, xmlLabel) {
+        try {
+            await window.GIBS.FBClients.ensureDymoLoaded();
+            var printers = dymo.label.framework.getLabelWriterPrinters();
+            if (!printers || printers.length === 0) {
+                return 'No DYMO LabelWriter printers were found. Please ensure DYMO Connect is running and your printer is connected.';
+            }
+            var printerName = printers[0].name;
+            var label = dymo.label.framework.openLabelXml((xmlLabel || '').toString());
+            label.setObjectText('Line_1', (line1 || '').toString());
+            label.setObjectText('Line_2', (line2 || '').toString());
+            label.setObjectText('Line_3', (line3 || '').toString());
+            var copies = parseInt(howmanycopies, 10);
+            if (isNaN(copies) || copies < 1) { copies = 1; }
+            var params = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: copies });
+            await dymo.label.framework.printLabel(printerName, params, label);
+            return '';
+        } catch (error) {
+            console.error('Error printing label:', error);
+            return error && error.message ? error.message : String(error);
+        }
+    };
+}
+if (!window.GIBS.FBClients.printBarCodeLabel) {
+    window.GIBS.FBClients.printBarCodeLabel = async function (line1, barcodenumber, howmanycopies, xmlLabel) {
+        try {
+            await window.GIBS.FBClients.ensureDymoLoaded();
+            var printers = dymo.label.framework.getLabelWriterPrinters();
+            if (!printers || printers.length === 0) {
+                return 'No DYMO LabelWriter printers were found. Please ensure DYMO Connect is running and your printer is connected.';
+            }
+            var printerName = printers[0].name;
+            var label = dymo.label.framework.openLabelXml((xmlLabel || '').toString());
+            label.setObjectText('TextObject0', (line1 || '').toString());
+            label.setObjectText('BarcodeObject0', (barcodenumber || '').toString());
+            var copies = parseInt(howmanycopies, 10);
+            if (isNaN(copies) || copies < 1) { copies = 1; }
+            var params = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: copies });
+            await dymo.label.framework.printLabel(printerName, params, label);
+            return '';
+        } catch (error) {
+            console.error('Error printing barcode label:', error);
+            return error && error.message ? error.message : String(error);
+        }
+    };
+}",
+            "body");
+    }
+
+    private string GetLabelLine1() => $"{_client.ClientFirstName} {_client.ClientLastName}".Trim();
+
+    private string GetLabelLine2()
+    {
+        var displayClientId = _client.LegacyClientId ?? _client.FBClientsId;
+        var town = !string.IsNullOrWhiteSpace(_client.ClientTown) ? _client.ClientTown : (_client.ClientCity ?? string.Empty);
+        return $"{displayClientId}  -  {town}";
+    }
+
+    private string GetLabelLine3() => $"# Bags: {_qualifiesForBags}";
+
+    private string GetBarcodeClientIdNumber() => (_client.LegacyClientId ?? _client.FBClientsId).ToString().PadLeft(11, '0');
+
+    private int GetShoppingLabelCopies() =>
+        int.TryParse(_settings.PrintShoppingLabelQuantity, out var qty) && qty > 0 ? qty : 1;
+
     private async Task PrintShoppingLabel()
     {
-        await JSRuntime.InvokeVoidAsync("window.print");
+        try
+        {
+            await EnsureDymoPrintScriptsAsync();
+            var error = await JSRuntime.InvokeAsync<string>(
+                "GIBS.FBClients.printShoppingLabel",
+                GetLabelLine1(),
+                GetLabelLine2(),
+                GetLabelLine3(),
+                GetShoppingLabelCopies(),
+                ShoppingLabelXml);
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                AddModuleMessage(error, MessageType.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Printing Shopping Label {Error}", ex.Message);
+            AddModuleMessage($"Error printing shopping label: {ex.Message}", MessageType.Error);
+        }
     }
 
     private async Task PrintBarcodeLabel()
     {
-        await JSRuntime.InvokeVoidAsync("window.print");
+        try
+        {
+            await EnsureDymoPrintScriptsAsync();
+            var error = await JSRuntime.InvokeAsync<string>(
+                "GIBS.FBClients.printBarCodeLabel",
+                GetLabelLine1(),
+                GetBarcodeClientIdNumber(),
+                1,
+                BarcodeLabelXml);
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                AddModuleMessage(error, MessageType.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Printing Barcode Label {Error}", ex.Message);
+            AddModuleMessage($"Error printing barcode label: {ex.Message}", MessageType.Error);
+        }
     }
 
     private string GetReturnToSearchUrl()

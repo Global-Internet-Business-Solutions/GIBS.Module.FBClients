@@ -4,6 +4,7 @@
 @implements Oqtane.Interfaces.ISettingsControl
 @inject ISettingService SettingService
 @inject IRoleService RoleService
+@inject IFolderService FolderService
 @inject IStringLocalizer<Settings> Localizer
 
 @if (_initialized)
@@ -83,9 +84,14 @@
         <Section Name="GeneralSettings2" Heading="General Settings" ResourceKey="sectGeneralSettings" ResourceType="@resourceType" Expanded="true">
             <div class="container">
                 <div class="row mb-1 align-items-center">
-                    <Label Class="col-sm-3" For="txtIDCardImagePath" HelpText="ID Card Image Path" ResourceKey="lblIDCardImagePath" ResourceType="@resourceType">ID Card Image Path:</Label>
+                    <Label Class="col-sm-3" For="txtIDCardImagePath" HelpText="Oqtane File Manager folder for ID Card Image Path" ResourceKey="lblIDCardImagePath" ResourceType="@resourceType">ID Card Image Path:</Label>
                     <div class="col-sm-9">
-                        <input id="txtIDCardImagePath" type="text" class="form-control" @bind="@_settings.IDCardImagePath" />
+                        <select id="txtIDCardImagePath" class="form-select" @bind="@_settings.IDCardImagePath">
+                            @foreach (Folder folder in _folders)
+                            {
+                                <option value="@(folder.FolderId)">@(new string('-', folder.Level * 2))@(folder.Name)</option>
+                            }
+                        </select>
                     </div>
                 </div>
                 <div class="row mb-1 align-items-center">
@@ -402,6 +408,8 @@
 
     private bool _initialized;
     private FBClientsSettings _settings = new();
+    private List<Folder> _folders = new();
+    private int _rootFolderId;
     private List<string> _availableRoles = new();
     private RichTextEditor _toyTicketEditor;
     private RichTextEditor _incomeEligibilityGuidelinesEditor;
@@ -410,8 +418,21 @@
     {
         try
         {
+            var rootFolder = await FolderService.GetFolderAsync(PageState.Site.SiteId, "");
+            if (rootFolder != null)
+            {
+                _rootFolderId = rootFolder.FolderId;
+            }
+
+            _folders = await FolderService.GetFoldersAsync(PageState.Site.SiteId) ?? new List<Folder>();
+
             Dictionary<string, string> settings = await SettingService.GetModuleSettingsAsync(ModuleState.ModuleId);
             _settings = FBClientsSettings.FromDictionary(settings);
+
+            if (string.IsNullOrWhiteSpace(_settings.IDCardImagePath) && _rootFolderId > 0)
+            {
+                _settings.IDCardImagePath = _rootFolderId.ToString();
+            }
 
             var roles = await RoleService.GetRolesAsync(PageState.Site.SiteId);
             if (roles != null)

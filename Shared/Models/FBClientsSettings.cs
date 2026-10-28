@@ -115,9 +115,9 @@ namespace GIBS.Module.FBClients.Models
         public bool ShowDisabilities { get; set; }
         public bool ShowClientType { get; set; }
         public bool ShowClientIdCard { get; set; }
-        public bool ShowPrintShoppingLabel { get; set; }
+        public bool ShowPrintShoppingLabel { get; set; } = true;
         public string PrintShoppingLabelQuantity { get; set; } = "1";
-        public bool ShowPrintBarCodeLabel { get; set; }
+        public bool ShowPrintBarCodeLabel { get; set; } = true;
         public bool IncludeInactiveOnSearch { get; set; }
         public string FlagForReviewNotify { get; set; } = string.Empty;
         public string FocusableControl { get; set; } = "txtClientId";
@@ -198,14 +198,14 @@ namespace GIBS.Module.FBClients.Models
             result.ShowDisabilities = GetBool(settings, Keys.ShowDisabilities, false);
             result.ShowClientType = GetBool(settings, Keys.ShowClientType, false);
             result.ShowClientIdCard = GetBool(settings, Keys.ShowClientIdCard, false);
-            result.ShowPrintShoppingLabel = GetBool(settings, Keys.ShowPrintShoppingLabel, false);
+            result.ShowPrintShoppingLabel = GetBool(settings, Keys.ShowPrintShoppingLabel, true);
             result.PrintShoppingLabelQuantity = GetString(settings, Keys.PrintShoppingLabelQuantity, "1");
             if (string.IsNullOrWhiteSpace(result.PrintShoppingLabelQuantity))
             {
                 result.PrintShoppingLabelQuantity = "1";
             }
 
-            result.ShowPrintBarCodeLabel = GetBool(settings, Keys.ShowPrintBarCodeLabel, false);
+            result.ShowPrintBarCodeLabel = GetBool(settings, Keys.ShowPrintBarCodeLabel, true);
             result.IncludeInactiveOnSearch = GetBool(settings, Keys.IncludeInactiveOnSearch, false);
             result.FlagForReviewNotify = GetString(settings, Keys.FlagForReviewNotify, string.Empty);
             result.FocusableControl = GetString(settings, Keys.FocusableControl, "txtClientId");

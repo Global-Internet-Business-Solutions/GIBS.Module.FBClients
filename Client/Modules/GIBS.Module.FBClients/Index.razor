@@ -301,6 +301,8 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        await base.OnAfterRenderAsync(firstRender);
+
         if (_initialized && !_focusApplied)
         {
             _focusApplied = true;
