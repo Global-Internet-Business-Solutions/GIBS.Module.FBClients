@@ -5,6 +5,7 @@
 
 @namespace GIBS.Module.FBClients
 @inherits ModuleBase
+@implements IAsyncDisposable
 @inject IFBClientsService ClientFBClientsService
 @inject ISettingService SettingService
 @inject IUserRoleService UserRoleService
@@ -16,14 +17,6 @@
 {
     @if (_id > 0)
     {
-        <input type="hidden" id="hidLabelContent" value="@GetLabelLine1()" />
-        <input type="hidden" id="hidLabelContent2" value="@GetLabelLine2()" />
-        <input type="hidden" id="hidLabelContent3" value="@GetLabelLine3()" />
-        <input type="hidden" id="hidLabelContentBarCode" value="@GetBarcodeClientIdNumber()" />
-        <input type="hidden" id="hidPrintShoppingLabelQuantity" value="@GetShoppingLabelCopies()" />
-        <input type="hidden" id="hidLabelXML" value="@ShoppingLabelXml" />
-        <input type="hidden" id="hidLabelBarCode" value="@BarcodeLabelXml" />
-
         <div class="row mb-2 border rounded bg-light p-2 align-items-center">
             <div class="col-md-5 ClientNameHeader">
                 @if (_settings.ShowPhotoID)
@@ -65,16 +58,6 @@
                         +/- Inc &amp; Exp: @_netIncomeExpense.ToString("C", CultureInfo.CurrentCulture)
                     </div>
                 }
-                <div class="mt-2">
-                    @if (_settings.ShowPrintShoppingLabel)
-                    {
-                        <button id="printDivLabel" type="button" class="btn btn-outline-primary btn-sm me-1" @onclick="PrintShoppingLabel">Print Shopping Label</button>
-                    }
-                    @if (_settings.ShowPrintBarCodeLabel)
-                    {
-                        <button id="printDivBarCodeLabel" type="button" class="btn btn-outline-primary btn-sm" @onclick="PrintBarcodeLabel">Print Barcode Label</button>
-                    }
-                </div>
             </div>
             @if (_client.SubjectToReview || !string.IsNullOrWhiteSpace(_client.ClientNote))
             {
@@ -84,6 +67,19 @@
                         <span class="badge bg-danger me-2">FLAGGED FOR REVIEW</span>
                     }
                     <span>@_client.ClientNote</span>
+                </div>
+            }
+            @if (_settings.ShowPrintShoppingLabel || _settings.ShowPrintBarCodeLabel)
+            {
+                <div class="col-12 ClientNameHeaderRight mt-2">
+                    @if (_settings.ShowPrintShoppingLabel)
+                    {
+                        <button @key="@("printDivLabel")" id="printDivLabel" type="button" class="btn btn-outline-primary btn-sm me-1" @onclick="PrintShoppingLabel">Print Shopping Label</button>
+                    }
+                    @if (_settings.ShowPrintBarCodeLabel)
+                    {
+                        <button @key="@("printDivBarCodeLabel")" id="printDivBarCodeLabel" type="button" class="btn btn-outline-primary btn-sm" @onclick="PrintBarcodeLabel">Print Barcode Label</button>
+                    }
                 </div>
             }
         </div>
@@ -1051,11 +1047,27 @@
                 }
 
                 <div class="container mb-3">
-                    <div class="d-flex justify-content-end gap-2 mb-2">
-                        <button type="button" class="btn btn-primary" disabled="@(_client.IsLocked == true)" @onclick="SaveVisit">Save/Update Visit</button>
+                    <div class="d-flex flex-wrap justify-content-end gap-2 mb-2">
+                        @if (_signatureActive)
+                        {
+                            <button type="button" class="btn btn-primary" disabled="@(_client.IsLocked == true || _signatureBusy)" @onclick="ClearSignature">@Localizer["Signature.Clear"]</button>
+                        }
+                        <button type="button" class="btn btn-primary" disabled="@(_client.IsLocked == true || _signatureBusy)" @onclick="SaveVisit">Save/Update Visit</button>
+                        @if (_signatureActive)
+                        {
+                            <button type="button" class="btn btn-outline-secondary" disabled="@_signatureBusy" @onclick="CancelSignature">@Localizer["Cancel"]</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn btn-primary" disabled="@(_client.IsLocked == true || _signatureBusy)" @onclick="StartSignature">@Localizer["Signature.Sign"]</button>
+                            @if (_editingVisit.ClientSignature?.Length > 0)
+                            {
+                                <button type="button" class="btn btn-outline-danger" disabled="@(_client.IsLocked == true || _signatureBusy)" @onclick="ClearSignature">@Localizer["Signature.Remove"]</button>
+                            }
+                        }
                         @if (_editingVisit.VisitId > 0)
                         {
-                            <button type="button" class="btn btn-outline-secondary" @onclick="ResetVisitForm">Cancel Edit</button>
+                            <button type="button" class="btn btn-outline-secondary" disabled="@(_signatureActive || _signatureBusy)" @onclick="ResetVisitForm">Cancel Edit</button>
                         }
                     </div>
 
@@ -1106,10 +1118,22 @@
                         </div>
                     }
 
+                    <div class="row mb-2" style="display: @(_signatureActive || _editingVisit.ClientSignature?.Length > 0 ? "" : "none");">
+                        <div class="col-sm-3 col-form-label fw-bold">@Localizer["Signature.Label"]</div>
+                        <div class="col-sm-9">
+                            <canvas @key="_editingVisit" @ref="_signatureCanvas" width="500" height="100" class="border rounded bg-white" style="max-width: 100%; display: @(_signatureActive ? "block" : "none");" aria-label="@Localizer["Signature.Label"]"></canvas>
+                            @if (!_signatureActive && _editingVisit.ClientSignature?.Length > 0)
+                            {
+                                <img src="@($"data:image/png;base64,{Convert.ToBase64String(_editingVisit.ClientSignature)}")" alt="@Localizer["Signature.Label"]" width="500" height="100" class="img-fluid border rounded bg-white" />
+                            }
+                            <div class="form-text" role="status">@Localizer[_signatureActive ? "Signature.SignPrompt" : "Signature.SavePrompt"]</div>
+                        </div>
+                    </div>
+
                     <div class="row mb-2 align-items-center">
                         <Label Class="col-sm-3" For="txtVisitNotes" HelpText="Visit Notes" ResourceKey="lblVisitNotes">Notes:</Label>
                         <div class="col-sm-9">
-                            <textarea id="txtVisitNotes" class="form-control" rows="2" maxlength="800" @bind="_editingVisit.VisitNotes"></textarea>
+                            <textarea id="txtVisitNotes" class="form-control" rows="6" maxlength="800" @bind="_editingVisit.VisitNotes"></textarea>
                         </div>
                     </div>
                 </div>
@@ -1145,7 +1169,7 @@
                                 {
                                     <tr>
                                         <td>
-                                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="@(() => EditVisit(visit))">Edit</button>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" disabled="@(_signatureActive || _signatureBusy)" @onclick="@(() => EditVisit(visit))">Edit</button>
                                         </td>
                                         @if (_canDeleteRecord)
                                         {
@@ -1187,8 +1211,9 @@
     public override List<Resource> Resources => new List<Resource>()
     {
         new Stylesheet("_content/GIBS.Module.FBClients/Module.css"),
-        new Script("_content/GIBS.Module.FBClients/dymo.connect.framework.js"),
-        new Script("_content/GIBS.Module.FBClients/Module.js?v=1.0.0")
+        new Script("_content/GIBS.Module.FBClients/dymo.connect.framework.js?v=1.0.3"),
+        new Script("_content/GIBS.Module.FBClients/Module.js?v=1.0.3"),
+        new Script("_content/GIBS.Module.FBClients/Signature.js?v=1.0.0")
     };
 
     private bool _initialized;
@@ -1246,6 +1271,9 @@
     // Visit Editing State
     private FBClientsVisits _editingVisit = new() { VisitDate = DateOnly.FromDateTime(DateTime.Today), VisitNumBags = 1 };
     private int _repeatInsertCount = 1;
+    private ElementReference _signatureCanvas;
+    private bool _signatureActive;
+    private bool _signatureBusy;
 
     // Option Lists (matching DNN Lists)
     private readonly List<string> _clientTypeOptions = new() { "Individual", "Group Home", "Pallet" };
@@ -2309,6 +2337,100 @@
     }
 
     // Visits
+    private async Task RunSignatureAction(Func<Task> action)
+    {
+        if (_signatureBusy)
+        {
+            return;
+        }
+        _signatureBusy = true;
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Capturing Visit Signature {Error}", ex.Message);
+            AddModuleMessage(Localizer["Signature.Error", ex.Message], MessageType.Error);
+        }
+        finally
+        {
+            _signatureBusy = false;
+        }
+    }
+
+    private Task StartSignature() => RunSignatureAction(async () =>
+    {
+        if (_client.IsLocked == true)
+        {
+            AddModuleMessage("THIS ACCOUNT IS LOCKED - YOU CANNOT ADD A VISIT!", MessageType.Error);
+            return;
+        }
+        await JSRuntime.InvokeVoidAsync("GIBS.FBClients.signature.start", _signatureCanvas);
+        _signatureActive = true;
+    });
+
+    private Task ClearSignature() => RunSignatureAction(async () =>
+    {
+        if (_client.IsLocked == true)
+        {
+            AddModuleMessage("THIS ACCOUNT IS LOCKED - YOU CANNOT ADD A VISIT!", MessageType.Error);
+            return;
+        }
+        if (_signatureActive)
+        {
+            await JSRuntime.InvokeVoidAsync("GIBS.FBClients.signature.clear", _signatureCanvas);
+        }
+        else
+        {
+            _editingVisit.ClientSignature = null;
+        }
+    });
+
+    private async Task FinishSignature()
+    {
+        try
+        {
+            var image = await JSRuntime.InvokeAsync<string>("GIBS.FBClients.signature.finish", _signatureCanvas);
+            var bytes = Convert.FromBase64String(image);
+            if (bytes.Length < 8 || bytes[0] != 137 || bytes[1] != 80 || bytes[2] != 78 || bytes[3] != 71
+                || bytes[4] != 13 || bytes[5] != 10 || bytes[6] != 26 || bytes[7] != 10)
+            {
+                throw new InvalidOperationException(Localizer["Signature.InvalidImage"]);
+            }
+            _editingVisit.ClientSignature = bytes;
+        }
+        finally
+        {
+            _signatureActive = false;
+        }
+    }
+
+    private Task CancelSignature() => RunSignatureAction(async () =>
+    {
+        await JSRuntime.InvokeVoidAsync("GIBS.FBClients.signature.stop", _signatureCanvas);
+        _signatureActive = false;
+    });
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_signatureActive)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("GIBS.FBClients.signature.stop", _signatureCanvas);
+            }
+            catch (Microsoft.JSInterop.JSDisconnectedException)
+            {
+                // The browser also stops capture when the page or canvas is removed.
+            }
+            catch (Exception ex)
+            {
+                await logger.LogError(ex, "Error Stopping Visit Signature Capture {Error}", ex.Message);
+            }
+        }
+    }
+
     private void ResetVisitForm()
     {
         _editingVisit = new FBClientsVisits
@@ -2346,12 +2468,32 @@
 
     private async Task SaveVisit()
     {
+        if (_signatureBusy)
+        {
+            AddModuleMessage(Localizer["Signature.Busy"], MessageType.Warning);
+            return;
+        }
+        _signatureBusy = true;
         try
         {
             if (_client.IsLocked == true)
             {
                 AddModuleMessage("THIS ACCOUNT IS LOCKED - YOU CANNOT ADD A VISIT!", MessageType.Error);
                 return;
+            }
+
+            if (_signatureActive)
+            {
+                try
+                {
+                    await FinishSignature();
+                }
+                catch (Exception ex)
+                {
+                    await logger.LogError(ex, "Error Capturing Visit Signature {Error}", ex.Message);
+                    AddModuleMessage(Localizer["Signature.Error", ex.Message], MessageType.Error);
+                    return;
+                }
             }
 
             _editingVisit.FBClientsId = _id;
@@ -2375,6 +2517,7 @@
                         VisitNumBags = _editingVisit.VisitNumBags,
                         VisitNotes = _editingVisit.VisitNotes,
                         ServiceLocation = _editingVisit.ServiceLocation,
+                        ClientSignature = _editingVisit.ClientSignature,
                         OrderStatusCode = _editingVisit.OrderStatusCode ?? 0
                     }, ModuleState.ModuleId);
                 }
@@ -2390,10 +2533,20 @@
             await logger.LogError(ex, "Error Saving Visit {Error}", ex.Message);
             AddModuleMessage("Error saving visit.", MessageType.Error);
         }
+        finally
+        {
+            _signatureBusy = false;
+        }
     }
 
     private async Task DeleteVisit(int visitId)
     {
+        if (_signatureActive || _signatureBusy)
+        {
+            AddModuleMessage(Localizer["Signature.FinishFirst"], MessageType.Warning);
+            return;
+        }
+        _signatureBusy = true;
         try
         {
             if (_canDeleteRecord)
@@ -2409,9 +2562,13 @@
             await logger.LogError(ex, "Error Deleting Visit {VisitId} {Error}", visitId, ex.Message);
             AddModuleMessage("Error deleting visit.", MessageType.Error);
         }
+        finally
+        {
+            _signatureBusy = false;
+        }
     }
 
-    private static string GetOrderStatusLabel(int? code) => (code ?? 0) switch
+    private static string GetOrderStatusLabel(int? statusCode) => statusCode switch
     {
         1 => "Link Sent",
         2 => "Order Submitted",
@@ -2419,101 +2576,6 @@
         4 => "Filled",
         _ => "Standard Visit"
     };
-
-    private const string ShoppingLabelXml = @"<?xml version=""1.0"" encoding=""utf-8""?><DesktopLabel Version=""1"">  <DYMOLabel Version=""3""><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>Address</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.23</X><Y>0.06</Y></DYMOPoint><Size><Width>3.21</Width><Height>0.9966666</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><TextObject><Name>Line_1</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A=""0"" R=""1"" G=""1"" B=""1""></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush>  <Color A=""0"" R=""1"" G=""1"" B=""1""></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left=""0"" Top=""0"" Right=""0"" Bottom=""0"" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan>  <Text>Enter Text</Text>  <FontInfo><FontName>Arial</FontName><FontSize>23.4</FontSize><IsBold>False</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush>  <SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color>  </SolidColorBrush></FontBrush>  </FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>0.3867604</X><Y>0.0716153</Y></DYMOPoint><Size><Width>2.726479</Width><Height>0.3758107</Height></Size></ObjectLayout></TextObject><TextObject><Name>Line_2</Name><Brushes><BackgroundBrush><SolidColorBrush>  <Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush>  <Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush>  <Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush>  <Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left=""0"" Top=""0"" Right=""0"" Bottom=""0"" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan>  <Text>ABC</Text>  <FontInfo><FontName>Segoe UI</FontName><FontSize>19.3</FontSize><IsBold>False</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush>  <SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color>  </SolidColorBrush></FontBrush>  </FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>0.2437118</X><Y>0.3820833</Y></DYMOPoint><Size><Width>3.046935</Width><Height>0.3600001</Height></Size></ObjectLayout></TextObject><TextObject><Name>Line_3</Name><Brushes><BackgroundBrush><SolidColorBrush>  <Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush>  <Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush>  <Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush>  <Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left=""0"" Top=""0"" Right=""0"" Bottom=""0"" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan>  <Text>ABC</Text>  <FontInfo><FontName>Segoe UI</FontName><FontSize>21.2</FontSize><IsBold>False</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush>  <SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color>  </SolidColorBrush></FontBrush>  </FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>0.5063462</X><Y>0.6558337</Y></DYMOPoint><Size><Width>2.438336</Width><Height>0.3979165</Height></Size></ObjectLayout></TextObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>";
-
-    private const string BarcodeLabelXml = @"<?xml version=""1.0"" encoding=""utf-8""?><DesktopLabel Version=""1""><DYMOLabel Version=""3""><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>Address</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.23</X><Y>0.06</Y></DYMOPoint><Size><Width>3.21</Width><Height>0.9966666</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><TextObject><Name>TextObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A=""0"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left=""0"" Top=""0"" Right=""0"" Bottom=""0"" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>ABC</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>25.1</FontSize><IsBold>False</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>0.25</X><Y>0.06041637</Y></DYMOPoint><Size><Width>3.006255</Width><Height>0.4683344</Height></Size></ObjectLayout></TextObject><BarcodeObject><Name>BarcodeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A=""1"" R=""1"" G=""1"" B=""1""></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left=""0"" Top=""0"" Right=""0"" Bottom=""0"" /></Margin><BarcodeFormat>Code128Auto</BarcodeFormat><Data><DataString>123</DataString></Data><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><Size>SmallMedium</Size><TextPosition>Bottom</TextPosition><FontInfo><FontName>Arial</FontName><FontSize>12</FontSize><IsBold>False</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A=""1"" R=""0"" G=""0"" B=""0""></Color></SolidColorBrush></FontBrush></FontInfo><ObjectLayout><DYMOPoint><X>0.2595834</X><Y>0.5287508</Y></DYMOPoint><Size><Width>3.03293</Width><Height>0.527916</Height></Size></ObjectLayout></BarcodeObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>";
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        await base.OnAfterRenderAsync(firstRender);
-        if (firstRender)
-        {
-            await EnsureDymoPrintScriptsAsync();
-        }
-    }
-
-    private async Task EnsureDymoPrintScriptsAsync()
-    {
-        var interop = new Oqtane.UI.Interop(JSRuntime);
-        await interop.IncludeScript(
-            "gibs-fbclients-dymo-inline",
-            "",
-            "",
-            "",
-            @"window.GIBS = window.GIBS || {};
-window.GIBS.FBClients = window.GIBS.FBClients || {};
-if (!window.GIBS.FBClients.ensureDymoLoaded) {
-    window.GIBS.FBClients.ensureDymoLoaded = function () {
-        if (typeof dymo !== 'undefined' && dymo.label && dymo.label.framework) {
-            return Promise.resolve();
-        }
-        return new Promise(function (resolve, reject) {
-            var existing = document.querySelector('script[data-gibs-dymo=""true""]');
-            if (existing) {
-                existing.addEventListener('load', function () { resolve(); });
-                existing.addEventListener('error', function () { reject(new Error('Failed to load DYMO Connect Framework script.')); });
-                return;
-            }
-            var script = document.createElement('script');
-            script.type = 'text/javascript';
-            script.src = '/_content/GIBS.Module.FBClients/dymo.connect.framework.js';
-            script.setAttribute('data-gibs-dymo', 'true');
-            script.onload = function () { resolve(); };
-            script.onerror = function () { reject(new Error('Failed to load DYMO Connect Framework script.')); };
-            document.head.appendChild(script);
-        });
-    };
-}
-if (!window.GIBS.FBClients.printShoppingLabel) {
-    window.GIBS.FBClients.printShoppingLabel = async function (line1, line2, line3, howmanycopies, xmlLabel) {
-        try {
-            await window.GIBS.FBClients.ensureDymoLoaded();
-            var printers = dymo.label.framework.getLabelWriterPrinters();
-            if (!printers || printers.length === 0) {
-                return 'No DYMO LabelWriter printers were found. Please ensure DYMO Connect is running and your printer is connected.';
-            }
-            var printerName = printers[0].name;
-            var label = dymo.label.framework.openLabelXml((xmlLabel || '').toString());
-            label.setObjectText('Line_1', (line1 || '').toString());
-            label.setObjectText('Line_2', (line2 || '').toString());
-            label.setObjectText('Line_3', (line3 || '').toString());
-            var copies = parseInt(howmanycopies, 10);
-            if (isNaN(copies) || copies < 1) { copies = 1; }
-            var params = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: copies });
-            await dymo.label.framework.printLabel(printerName, params, label);
-            return '';
-        } catch (error) {
-            console.error('Error printing label:', error);
-            return error && error.message ? error.message : String(error);
-        }
-    };
-}
-if (!window.GIBS.FBClients.printBarCodeLabel) {
-    window.GIBS.FBClients.printBarCodeLabel = async function (line1, barcodenumber, howmanycopies, xmlLabel) {
-        try {
-            await window.GIBS.FBClients.ensureDymoLoaded();
-            var printers = dymo.label.framework.getLabelWriterPrinters();
-            if (!printers || printers.length === 0) {
-                return 'No DYMO LabelWriter printers were found. Please ensure DYMO Connect is running and your printer is connected.';
-            }
-            var printerName = printers[0].name;
-            var label = dymo.label.framework.openLabelXml((xmlLabel || '').toString());
-            label.setObjectText('TextObject0', (line1 || '').toString());
-            label.setObjectText('BarcodeObject0', (barcodenumber || '').toString());
-            var copies = parseInt(howmanycopies, 10);
-            if (isNaN(copies) || copies < 1) { copies = 1; }
-            var params = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: copies });
-            await dymo.label.framework.printLabel(printerName, params, label);
-            return '';
-        } catch (error) {
-            console.error('Error printing barcode label:', error);
-            return error && error.message ? error.message : String(error);
-        }
-    };
-}",
-            "body");
-    }
 
     private string GetLabelLine1() => $"{_client.ClientFirstName} {_client.ClientLastName}".Trim();
 
@@ -2535,14 +2597,12 @@ if (!window.GIBS.FBClients.printBarCodeLabel) {
     {
         try
         {
-            await EnsureDymoPrintScriptsAsync();
             var error = await JSRuntime.InvokeAsync<string>(
                 "GIBS.FBClients.printShoppingLabel",
                 GetLabelLine1(),
                 GetLabelLine2(),
                 GetLabelLine3(),
-                GetShoppingLabelCopies(),
-                ShoppingLabelXml);
+                GetShoppingLabelCopies());
 
             if (!string.IsNullOrWhiteSpace(error))
             {
@@ -2560,13 +2620,11 @@ if (!window.GIBS.FBClients.printBarCodeLabel) {
     {
         try
         {
-            await EnsureDymoPrintScriptsAsync();
             var error = await JSRuntime.InvokeAsync<string>(
                 "GIBS.FBClients.printBarCodeLabel",
                 GetLabelLine1(),
                 GetBarcodeClientIdNumber(),
-                1,
-                BarcodeLabelXml);
+                1);
 
             if (!string.IsNullOrWhiteSpace(error))
             {

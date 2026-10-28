@@ -408,4 +408,34 @@
   <data name="Message.SaveError" xml:space="preserve">
     <value>Error Saving FBClients</value>
   </data>
+  <data name="Signature.Label" xml:space="preserve">
+    <value>Signature:</value>
+  </data>
+  <data name="Signature.Sign" xml:space="preserve">
+    <value>Sign</value>
+  </data>
+  <data name="Signature.Clear" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="Signature.Remove" xml:space="preserve">
+    <value>Remove Signature</value>
+  </data>
+  <data name="Signature.SignPrompt" xml:space="preserve">
+    <value>Sign on the Topaz pad, then click Save/Update Visit. Cancel keeps the previous signature.</value>
+  </data>
+  <data name="Signature.SavePrompt" xml:space="preserve">
+    <value>Signature is optional. Click Save/Update Visit to save the visit and its signature.</value>
+  </data>
+  <data name="Signature.Error" xml:space="preserve">
+    <value>Unable to capture signature: {0}</value>
+  </data>
+  <data name="Signature.InvalidImage" xml:space="preserve">
+    <value>SigWeb did not return a PNG signature image. Please sign again.</value>
+  </data>
+  <data name="Signature.FinishFirst" xml:space="preserve">
+    <value>Save the visit or cancel signature capture before editing or deleting visits.</value>
+  </data>
+  <data name="Signature.Busy" xml:space="preserve">
+    <value>Please wait for the current visit or signature operation to finish.</value>
+  </data>
 </root>

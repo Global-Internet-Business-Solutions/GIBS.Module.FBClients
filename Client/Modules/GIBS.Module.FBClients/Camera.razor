@@ -96,7 +96,7 @@ else if (_client != null)
     public override List<Resource> Resources => new List<Resource>()
     {
         new Stylesheet("_content/GIBS.Module.FBClients/Module.css"),
-        new Script("_content/GIBS.Module.FBClients/Module.js?v=1.0.0")
+        new Script("_content/GIBS.Module.FBClients/Module.js?v=1.0.3")
     };
 
     private bool _initialized;
@@ -150,7 +150,6 @@ else if (_client != null)
         {
             try
             {
-                await EnsureCameraScriptAsync();
                 await JSRuntime.InvokeVoidAsync("GIBS.FBClients.startCamera", "player", "https", "no-device", "no-support");
                 _cameraStarted = true;
             }
@@ -159,69 +158,6 @@ else if (_client != null)
                 // Will retry on next interactive render if prerendering
             }
         }
-    }
-
-    private async Task EnsureCameraScriptAsync()
-    {
-        var interop = new Oqtane.UI.Interop(JSRuntime);
-        await interop.IncludeScript(
-            "gibs-fbclients-camera-inline",
-            "",
-            "",
-            "",
-            "text/javascript",
-            @"window.GIBS = window.GIBS || {};
-window.GIBS.FBClients = window.GIBS.FBClients || {};
-if (!window.GIBS.FBClients.startCamera) {
-    window.GIBS.FBClients.startCamera = function (videoElementId, httpsMessageId, noDeviceMessageId, noSupportMessageId) {
-        var player = document.getElementById(videoElementId);
-        var httpsMessageBox = document.getElementById(httpsMessageId);
-        var noDeviceMessageBox = document.getElementById(noDeviceMessageId);
-        var noSupportMessageBox = document.getElementById(noSupportMessageId);
-        if (!player) return;
-        var isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        if (!isSecure) {
-            if (httpsMessageBox) httpsMessageBox.classList.remove('camera-hidden');
-            return;
-        }
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({ audio: false, video: true })
-                .then(function (mediaStream) {
-                    window.GIBS.FBClients._cameraStream = mediaStream;
-                    player.classList.remove('camera-hidden');
-                    if ('srcObject' in player) { player.srcObject = mediaStream; }
-                    else { player.src = window.URL.createObjectURL(mediaStream); }
-                    player.onloadedmetadata = function () { player.play(); };
-                })
-                .catch(function (err) {
-                    console.error('Unable to access camera:', err);
-                    if (noDeviceMessageBox) noDeviceMessageBox.classList.remove('camera-hidden');
-                });
-        } else {
-            if (noSupportMessageBox) noSupportMessageBox.classList.remove('camera-hidden');
-        }
-    };
-    window.GIBS.FBClients.captureSnapshot = function (videoElementId, canvasElementId) {
-        var stream = document.getElementById(videoElementId);
-        var capture = document.getElementById(canvasElementId);
-        if (!stream || !capture) return '';
-        var ctx = capture.getContext('2d');
-        ctx.drawImage(stream, 0, 0, capture.width, capture.height);
-        return capture.toDataURL('image/png');
-    };
-    window.GIBS.FBClients.stopCamera = function (videoElementId) {
-        if (window.GIBS.FBClients._cameraStream) {
-            var tracks = window.GIBS.FBClients._cameraStream.getTracks();
-            for (var i = 0; i < tracks.length; i++) { tracks[i].stop(); }
-            window.GIBS.FBClients._cameraStream = null;
-        }
-        if (videoElementId) {
-            var player = document.getElementById(videoElementId);
-            if (player && 'srcObject' in player) { player.srcObject = null; }
-        }
-    };
-}",
-            "body");
     }
 
     private async Task FillClientRecordAsync(int clientId)
