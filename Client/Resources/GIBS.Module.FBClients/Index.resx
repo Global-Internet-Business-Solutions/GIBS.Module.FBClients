@@ -121,7 +121,7 @@
     <value>Name</value>
   </data>
   <data name="Add.Text" xml:space="preserve">
-    <value>Add FBClients</value>
+    <value>Add New Client</value>
   </data>
   <data name="Edit.Text" xml:space="preserve">
     <value>Edit</value>
@@ -136,12 +136,135 @@
     <value>Are You Sure You Wish To Delete This FBClients?</value>
   </data>
   <data name="Message.DisplayNone" xml:space="preserve">
-    <value>No FBClientss To Display</value>
+    <value>No matching client records found.</value>
   </data>
   <data name="Message.LoadError" xml:space="preserve">
     <value>Error Loading FBClients</value>
   </data>
   <data name="Message.DeleteError" xml:space="preserve">
     <value>Error Deleting FBClients</value>
+  </data>
+  <data name="Client.Heading" xml:space="preserve">
+    <value>Search Clients</value>
+  </data>
+  <data name="AFM.Heading" xml:space="preserve">
+    <value>Search Household Members</value>
+  </data>
+  <data name="cbxIncludeInactive" xml:space="preserve">
+    <value>Include Inactive</value>
+  </data>
+  <data name="cbxIncludeInactive.Help" xml:space="preserve">
+    <value>Include inactive client records in search results.</value>
+  </data>
+  <data name="lblClientType" xml:space="preserve">
+    <value>Client Type</value>
+  </data>
+  <data name="lblClientType.Help" xml:space="preserve">
+    <value>Client Type</value>
+  </data>
+  <data name="lblClientId" xml:space="preserve">
+    <value>Client ID #</value>
+  </data>
+  <data name="lblClientId.Help" xml:space="preserve">
+    <value>Unique ID number in database</value>
+  </data>
+  <data name="lblFirstName" xml:space="preserve">
+    <value>First Name</value>
+  </data>
+  <data name="lblFirstName.Help" xml:space="preserve">
+    <value>Search by First Name</value>
+  </data>
+  <data name="lblLastName" xml:space="preserve">
+    <value>Last Name</value>
+  </data>
+  <data name="lblLastName.Help" xml:space="preserve">
+    <value>A wildcard of "%" can be used to search ALL names</value>
+  </data>
+  <data name="lblClientDOB" xml:space="preserve">
+    <value>Client DOB</value>
+  </data>
+  <data name="lblClientDOB.Help" xml:space="preserve">
+    <value>Client Date of Birth</value>
+  </data>
+  <data name="lblAddress" xml:space="preserve">
+    <value>Address</value>
+  </data>
+  <data name="lblAddress.Help" xml:space="preserve">
+    <value>Clients street address</value>
+  </data>
+  <data name="lblCity" xml:space="preserve">
+    <value>Town</value>
+  </data>
+  <data name="lblCity.Help" xml:space="preserve">
+    <value>Town of residence</value>
+  </data>
+  <data name="lblClientIdCard" xml:space="preserve">
+    <value>Client Id Card</value>
+  </data>
+  <data name="lblClientIdCard.Help" xml:space="preserve">
+    <value>Scan or enter ID Card Number</value>
+  </data>
+  <data name="lblFirstNameAFM" xml:space="preserve">
+    <value>First Name</value>
+  </data>
+  <data name="lblFirstNameAFM.Help" xml:space="preserve">
+    <value>Search by Household Member First Name</value>
+  </data>
+  <data name="lblLastNameAFM" xml:space="preserve">
+    <value>Last Name</value>
+  </data>
+  <data name="lblLastNameAFM.Help" xml:space="preserve">
+    <value>Search by Household Member Last Name</value>
+  </data>
+  <data name="lblAFMDOB" xml:space="preserve">
+    <value>Date of Birth</value>
+  </data>
+  <data name="lblAFMDOB.Help" xml:space="preserve">
+    <value>Household Member Date of Birth</value>
+  </data>
+  <data name="btnSearch" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="btnAddNewClient" xml:space="preserve">
+    <value>Add New Client</value>
+  </data>
+  <data name="Col.Verified" xml:space="preserve">
+    <value>Verified</value>
+  </data>
+  <data name="Col.LastName" xml:space="preserve">
+    <value>Last Name</value>
+  </data>
+  <data name="Col.FirstName" xml:space="preserve">
+    <value>First Name</value>
+  </data>
+  <data name="Col.Address" xml:space="preserve">
+    <value>Address</value>
+  </data>
+  <data name="Col.Unit" xml:space="preserve">
+    <value>Unit</value>
+  </data>
+  <data name="Col.Town" xml:space="preserve">
+    <value>Town</value>
+  </data>
+  <data name="Col.Age" xml:space="preserve">
+    <value>Age</value>
+  </data>
+  <data name="Col.DOB" xml:space="preserve">
+    <value>DOB</value>
+  </data>
+  <data name="Col.Active" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="Col.AFMFirstName" xml:space="preserve">
+    <value>AFM First Name</value>
+  </data>
+  <data name="Col.AFMLastName" xml:space="preserve">
+    <value>AFM Last Name</value>
+  </data>
+  <data name="Col.LastVisit" xml:space="preserve">
+    <value>Last Visit</value>
+  </data>
+  <data name="Col.Bags" xml:space="preserve">
+    <value>Bags</value>
   </data>
 </root>

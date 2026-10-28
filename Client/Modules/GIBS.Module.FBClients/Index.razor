@@ -1,79 +1,560 @@
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Web
 @using GIBS.Module.FBClients.Services
 @using GIBS.Module.FBClients.Models
 
 @namespace GIBS.Module.FBClients
 @inherits ModuleBase
 @inject IFBClientsService ClientFBClientsService
+@inject ISettingService SettingService
 @inject NavigationManager NavigationManager
 @inject IStringLocalizer<Index> Localizer
 
-@if (_FBClientss == null)
+@if (!_initialized)
 {
     <p><em>Loading...</em></p>
 }
 else
 {
-    <ActionLink Action="Add" Security="SecurityAccessLevel.Edit" Text="Add FBClients" ResourceKey="Add" />
-    <br />
-    <br />
-    @if (@_FBClientss.Count != 0)
-    {
-        <Pager Items="@_FBClientss">
-            <Header>
-                <th style="width: 1px;">&nbsp;</th>
-                <th style="width: 1px;">&nbsp;</th>
-                <th>@Localizer["Name"]</th>
-            </Header>
-            <Row>
-                <td><ActionLink Action="Edit" Parameters="@($"id=" + context.FBClientsId.ToString())" ResourceKey="Edit"  /></td>
-                <td><ActionDialog Header="Delete FBClients" Message="Are You Sure You Wish To Delete This FBClients?" Action="Delete" Security="SecurityAccessLevel.Edit" Class="btn btn-danger" OnClick="@(async () => await Delete(context))" ResourceKey="Delete"  Id="@context.FBClientsId.ToString()" /></td>
-                <td>@context.Name</td>
-            </Row>
-        </Pager>
-    }
-    else
-    {
-        <p>@Localizer["Message.DisplayNone"]</p>
-    }
+    <div class="container-fluid px-0">
+        <div class="d-flex justify-content-end mb-2">
+            <div class="form-check">
+                <input id="cbxIncludeInactive" class="form-check-input" type="checkbox" @bind="_includeInactive" />
+                <label class="form-check-label fw-semibold" for="cbxIncludeInactive" title="@Localizer["cbxIncludeInactive.Help"]">
+                    @Localizer["cbxIncludeInactive"]
+                </label>
+            </div>
+        </div>
+
+        <TabStrip>
+            <TabPanel Name="Client" Heading="Search Clients" ResourceKey="Client">
+                <div class="container">
+                    <div class="d-flex justify-content-end gap-2 my-2">
+                        <button type="button" class="btn btn-primary" @onclick="OnSearchClientClick">@Localizer["btnSearch"]</button>
+                        @if (UserSecurity.IsAuthorized(PageState.User, PermissionNames.Edit, ModuleState.PermissionList))
+                        {
+                            <button type="button" class="btn btn-outline-primary" @onclick="OnAddNewClientClick">@Localizer["btnAddNewClient"]</button>
+                        }
+                    </div>
+
+                    @if (_settings.ShowClientType)
+                    {
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="ddlClientType" HelpText="Client Type" ResourceKey="lblClientType">Client Type:</Label>
+                            <div class="col-sm-9">
+                                <select id="ddlClientType" class="form-select" @bind="_searchClientType">
+                                    <option value="">-</option>
+                                    <option value="Individual">Individual</option>
+                                    <option value="Group Home">Group Home</option>
+                                    <option value="Pallet">Pallet</option>
+                                </select>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="txtClientId" HelpText="Unique ID number in database" ResourceKey="lblClientId">Client ID #:</Label>
+                        <div class="col-sm-9">
+                            <input id="txtClientId" @ref="_txtClientIdRef" class="form-control" type="text" inputmode="numeric" value="@_searchClientId" @oninput="OnClientIdInput" @onkeydown="OnClientSearchKeyDown" />
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="txtFirstName" HelpText="Search by First Name" ResourceKey="lblFirstName">First Name:</Label>
+                        <div class="col-sm-9">
+                            <input id="txtFirstName" @ref="_txtFirstNameRef" class="form-control" type="text" @bind="_searchFirstName" @bind:event="oninput" @onkeydown="OnClientSearchKeyDown" />
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="txtLastName" HelpText="A wildcard of &quot;%&quot; can be used to search ALL names" ResourceKey="lblLastName">Last Name:</Label>
+                        <div class="col-sm-9">
+                            <input id="txtLastName" @ref="_txtLastNameRef" class="form-control" type="text" @bind="_searchLastName" @bind:event="oninput" @onkeydown="OnClientSearchKeyDown" />
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="txtClientDOB" HelpText="Client Date of Birth" ResourceKey="lblClientDOB">Client DOB:</Label>
+                        <div class="col-sm-9">
+                            <input id="txtClientDOB" class="form-control" type="date" @bind="_searchClientDOB" />
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="txtAddress" HelpText="Clients street address" ResourceKey="lblAddress">Address:</Label>
+                        <div class="col-sm-9">
+                            <input id="txtAddress" class="form-control" type="text" maxlength="50" @bind="_searchAddress" @bind:event="oninput" @onkeydown="OnClientSearchKeyDown" />
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="ddlCity" HelpText="Town of residence" ResourceKey="lblCity">Town:</Label>
+                        <div class="col-sm-9">
+                            <select id="ddlCity" class="form-select" @bind="_searchCity">
+                                <option value="">-</option>
+                                @foreach (var city in _cityOptions)
+                                {
+                                    <option value="@city">@city</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    @if (_settings.ShowClientIdCard)
+                    {
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientIdCard" HelpText="Scan or enter ID Card Number" ResourceKey="lblClientIdCard">Client Id Card:</Label>
+                            <div class="col-sm-9">
+                                <input id="txtClientIdCard" class="form-control" type="text" @bind="_searchClientIdCard" @bind:event="oninput" @onkeydown="OnClientSearchKeyDown" />
+                            </div>
+                        </div>
+                    }
+                </div>
+            </TabPanel>
+
+            <TabPanel Name="AFM" Heading="Search Household Members" ResourceKey="AFM">
+                <div class="container">
+                    <div class="d-flex justify-content-end gap-2 my-2">
+                        <button type="button" class="btn btn-primary" @onclick="OnSearchAfmClick">@Localizer["btnSearch"]</button>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="txtFirstNameAFM" HelpText="Search by Household Member First Name" ResourceKey="lblFirstNameAFM">First Name:</Label>
+                        <div class="col-sm-9">
+                            <input id="txtFirstNameAFM" class="form-control" type="text" @bind="_searchAfmFirstName" @bind:event="oninput" @onkeydown="OnAfmSearchKeyDown" />
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="txtLastNameAFM" HelpText="Search by Household Member Last Name" ResourceKey="lblLastNameAFM">Last Name:</Label>
+                        <div class="col-sm-9">
+                            <input id="txtLastNameAFM" class="form-control" type="text" @bind="_searchAfmLastName" @bind:event="oninput" @onkeydown="OnAfmSearchKeyDown" />
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="txtAFMDOB" HelpText="Household Member Date of Birth" ResourceKey="lblAFMDOB">Date of Birth:</Label>
+                        <div class="col-sm-9">
+                            <input id="txtAFMDOB" class="form-control" type="date" @bind="_searchAfmDOB" />
+                        </div>
+                    </div>
+                </div>
+            </TabPanel>
+        </TabStrip>
+
+        @if (_hasSearched)
+        {
+            <div class="mt-3">
+                @if (_searchResults != null && _searchResults.Count > 0)
+                {
+                    <Pager Items="@_searchResults" PageSize="10">
+                        <Header>
+                            <th class="text-center" style="width: 1px;">@Localizer["Edit.Text"]</th>
+                            <th class="text-center">@Localizer["Col.Verified"]</th>
+                            <th>@Localizer["Col.LastName"]</th>
+                            <th>@Localizer["Col.FirstName"]</th>
+                            <th>@Localizer["Col.Address"]</th>
+                            <th>@Localizer["Col.Unit"]</th>
+                            <th>@Localizer["Col.Town"]</th>
+                            @if (!_isAfmSearchMode)
+                            {
+                                <th class="text-center">@Localizer["Col.Age"]</th>
+                                <th class="text-center">@Localizer["Col.DOB"]</th>
+                            }
+                            <th class="text-center">@Localizer["Col.Active"]</th>
+                            @if (_isAfmSearchMode)
+                            {
+                                <th>@Localizer["Col.AFMFirstName"]</th>
+                                <th>@Localizer["Col.AFMLastName"]</th>
+                            }
+                            <th class="text-center">@Localizer["Col.LastVisit"]</th>
+                            <th class="text-center">@Localizer["Col.Bags"]</th>
+                        </Header>
+                        <Row>
+                            <td class="text-center">
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="@(() => EditClientRecord(context.FBClientsId))">@Localizer["Edit.Text"]</button>
+                            </td>
+                            <td class="text-center">
+                                @if (context.ClientDOBVerify)
+                                {
+                                    <span class="badge bg-success" title="DOB Verified">Yes</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-danger" title="DOB Not Verified">No</span>
+                                }
+                            </td>
+                            <td>@context.ClientLastName</td>
+                            <td>@context.ClientFirstName</td>
+                            <td>@context.ClientAddress</td>
+                            <td>@context.ClientUnit</td>
+                            <td>@context.ClientCity</td>
+                            @if (!_isAfmSearchMode)
+                            {
+                                <td class="text-center">@FormatAge(context.ClientDOB)</td>
+                                <td class="text-center">@FormatNullDate(context.ClientDOB)</td>
+                            }
+                            <td class="text-center">
+                                @if (context.IsLocked == true)
+                                {
+                                    <span class="badge bg-warning text-dark me-1" title="Account Locked">Locked</span>
+                                }
+                                @if (context.IsActive == true)
+                                {
+                                    <span class="badge bg-success" title="Active">Yes</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary" title="Inactive">No</span>
+                                }
+                            </td>
+                            @if (_isAfmSearchMode)
+                            {
+                                <td>@context.ClAddFamMemFirstName</td>
+                                <td>@context.ClAddFamMemLastName</td>
+                            }
+                            <td class="text-center">@FormatNullDate(context.LastVisitDate)</td>
+                            <td class="text-center">@(context.VisitNumBags.HasValue && context.VisitNumBags.Value > 0 ? context.VisitNumBags.Value.ToString(CultureInfo.InvariantCulture) : string.Empty)</td>
+                        </Row>
+                    </Pager>
+                }
+                else
+                {
+                    <div class="alert alert-info mb-0">@Localizer["Message.DisplayNone"]</div>
+                }
+            </div>
+        }
+    </div>
 }
 
 @code {
-    public override string RenderMode => RenderModes.Static;
-
     public override List<Resource> Resources => new List<Resource>()
     {
         new Stylesheet("_content/GIBS.Module.FBClients/Module.css"),
         new Script("_content/GIBS.Module.FBClients/Module.js")
     };
 
-    List<FBClients> _FBClientss;
+    private static readonly string[] DefaultCityOptions =
+    {
+        "Barnstable", "Brewster", "Centerville", "Chatham", "Cotuit", "Cummaquid",
+        "Dennis", "Dennis Port", "East Dennis", "East Harwich", "East Orleans", "East Sandwich",
+        "Eastham", "Forestdale", "Harwich", "Harwich Port", "Hyannis", "Hyannis Port",
+        "Marstons Mills", "Mashpee", "North Chatham", "North Eastham", "North Harwich", "North Truro",
+        "Orleans", "Osterville", "Provincetown", "Sandwich", "South Chatham", "South Dennis",
+        "South Harwich", "South Orleans", "South Wellfleet", "South Yarmouth", "Truro", "Wellfleet",
+        "West Barnstable", "West Chatham", "West Dennis", "West Harwich", "West Hyannisport", "West Yarmouth",
+        "Yarmouth", "Yarmouth Port"
+    };
+
+    private bool _initialized;
+    private bool _focusApplied;
+    private FBClientsSettings _settings = default!;
+    private List<string> _cityOptions = new();
+
+    private ElementReference _txtClientIdRef;
+    private ElementReference _txtFirstNameRef;
+    private ElementReference _txtLastNameRef;
+
+    private bool _includeInactive;
+    private string _searchClientType = string.Empty;
+    private string _searchClientId = string.Empty;
+    private string _searchFirstName = string.Empty;
+    private string _searchLastName = string.Empty;
+    private DateOnly? _searchClientDOB;
+    private string _searchAddress = string.Empty;
+    private string _searchCity = string.Empty;
+    private string _searchClientIdCard = string.Empty;
+
+    private string _searchAfmFirstName = string.Empty;
+    private string _searchAfmLastName = string.Empty;
+    private DateOnly? _searchAfmDOB;
+
+    private bool _isAfmSearchMode;
+    private bool _hasSearched;
+    private List<FBClientsSearchResult> _searchResults = new();
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            _FBClientss = await ClientFBClientsService.GetFBClientssAsync(ModuleState.ModuleId);
+            var settingsDict = await SettingService.GetModuleSettingsAsync(ModuleState.ModuleId);
+            _settings = FBClientsSettings.FromDictionary(settingsDict);
+            _includeInactive = _settings.IncludeInactiveOnSearch;
+
+            await LoadCityOptionsAsync();
+
+            var runAutoSearch = ApplyQueryStringParameters();
+            if (runAutoSearch)
+            {
+                await SearchClientsAsync(redirectOnSingleMatch: false);
+            }
+
+            _initialized = true;
         }
         catch (Exception ex)
         {
             await logger.LogError(ex, "Error Loading FBClients {Error}", ex.Message);
             AddModuleMessage(Localizer["Message.LoadError"], MessageType.Error);
+            _initialized = true;
         }
     }
 
-    private async Task Delete(FBClients FBClients)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_initialized && !_focusApplied)
+        {
+            _focusApplied = true;
+            try
+            {
+                var focusControl = _settings.FocusableControl?.Trim();
+                if (string.Equals(focusControl, "txtLastName", StringComparison.OrdinalIgnoreCase))
+                {
+                    await _txtLastNameRef.FocusAsync();
+                }
+                else if (string.Equals(focusControl, "txtFirstName", StringComparison.OrdinalIgnoreCase))
+                {
+                    await _txtFirstNameRef.FocusAsync();
+                }
+                else
+                {
+                    await _txtClientIdRef.FocusAsync();
+                }
+            }
+            catch
+            {
+                // Ignore focus exceptions when element is not yet interactive
+            }
+        }
+    }
+
+    private async Task LoadCityOptionsAsync()
+    {
+        var cities = new SortedSet<string>(DefaultCityOptions, StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(_settings.FBCity))
+        {
+            cities.Add(_settings.FBCity.Trim());
+        }
+
+        var allClients = await ClientFBClientsService.GetFBClientssAsync(ModuleState.ModuleId);
+        if (allClients != null)
+        {
+            foreach (var client in allClients)
+            {
+                if (!string.IsNullOrWhiteSpace(client.ClientCity))
+                {
+                    cities.Add(client.ClientCity.Trim());
+                }
+            }
+        }
+
+        _cityOptions = cities.ToList();
+    }
+
+    private bool ApplyQueryStringParameters()
+    {
+        var hasQueryCriteria = false;
+
+        if (PageState.QueryString.TryGetValue("clientid", out var clientId) && !string.IsNullOrWhiteSpace(clientId))
+        {
+            _searchClientId = clientId.Trim().TrimStart('0');
+            hasQueryCriteria = true;
+        }
+
+        if (PageState.QueryString.TryGetValue("cidcard", out var cidCard) && !string.IsNullOrWhiteSpace(cidCard))
+        {
+            _searchClientIdCard = cidCard.Trim();
+            hasQueryCriteria = true;
+        }
+
+        if (PageState.QueryString.TryGetValue("fname", out var firstName) && !string.IsNullOrWhiteSpace(firstName))
+        {
+            _searchFirstName = firstName.Trim();
+            hasQueryCriteria = true;
+        }
+
+        if (PageState.QueryString.TryGetValue("lname", out var lastName) && !string.IsNullOrWhiteSpace(lastName))
+        {
+            _searchLastName = lastName.Trim();
+            hasQueryCriteria = true;
+        }
+
+        if (PageState.QueryString.TryGetValue("address", out var address) && !string.IsNullOrWhiteSpace(address))
+        {
+            _searchAddress = address.Trim();
+            hasQueryCriteria = true;
+        }
+
+        if (PageState.QueryString.TryGetValue("inactive", out var inactive) && !string.IsNullOrWhiteSpace(inactive))
+        {
+            _includeInactive = bool.TryParse(inactive, out var parsedInactive) ? parsedInactive : true;
+        }
+
+        return hasQueryCriteria;
+    }
+
+    private async Task OnClientIdInput(ChangeEventArgs e)
+    {
+        _searchClientId = e.Value?.ToString() ?? string.Empty;
+        // Mirror DNN barcode auto-submit when >= 11 characters are scanned into txtClientId
+        if (_searchClientId.Trim().Length >= 11)
+        {
+            await OnSearchClientClick();
+        }
+    }
+
+    private async Task OnClientSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await OnSearchClientClick();
+        }
+    }
+
+    private async Task OnAfmSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await OnSearchAfmClick();
+        }
+    }
+
+    private async Task OnSearchClientClick()
+    {
+        _searchAfmFirstName = string.Empty;
+        _searchAfmLastName = string.Empty;
+        _searchAfmDOB = null;
+
+        await SearchClientsAsync(redirectOnSingleMatch: true);
+    }
+
+    private async Task SearchClientsAsync(bool redirectOnSingleMatch)
     {
         try
         {
-            await ClientFBClientsService.DeleteFBClientsAsync(FBClients.FBClientsId, ModuleState.ModuleId);
-            await logger.LogInformation("FBClients Deleted {FBClients}", FBClients);
-            _FBClientss = await ClientFBClientsService.GetFBClientssAsync(ModuleState.ModuleId);
-            StateHasChanged();
+            _isAfmSearchMode = false;
+            _hasSearched = true;
+
+            var request = new FBClientsSearchRequest
+            {
+                ModuleId = ModuleState.ModuleId,
+                ClientId = _searchClientId?.Trim().TrimStart('0'),
+                ClientIdCard = _searchClientIdCard?.Trim(),
+                ClientFirstName = _searchFirstName?.Trim(),
+                ClientLastName = _searchLastName?.Trim(),
+                ClientDOB = _searchClientDOB,
+                ClientAddress = _searchAddress?.Trim(),
+                ClientCity = _searchCity?.Trim(),
+                ClientType = _searchClientType?.Trim(),
+                IncludeInactive = _includeInactive,
+                IsAfmSearch = false
+            };
+
+            _searchResults = await ClientFBClientsService.SearchFBClientsAsync(request) ?? new List<FBClientsSearchResult>();
+
+            if (redirectOnSingleMatch && _searchResults.Count == 1)
+            {
+                EditClientRecord(_searchResults[0].FBClientsId);
+            }
         }
         catch (Exception ex)
         {
-            await logger.LogError(ex, "Error Deleting FBClients {FBClients} {Error}", FBClients, ex.Message);
-            AddModuleMessage(Localizer["Message.DeleteError"], MessageType.Error);
+            await logger.LogError(ex, "Error Searching FBClients {Error}", ex.Message);
+            AddModuleMessage(Localizer["Message.LoadError"], MessageType.Error);
         }
+    }
+
+    private async Task OnSearchAfmClick()
+    {
+        try
+        {
+            _searchClientId = string.Empty;
+            _searchFirstName = string.Empty;
+            _searchLastName = string.Empty;
+            _searchClientDOB = null;
+            _searchAddress = string.Empty;
+            _searchCity = string.Empty;
+            _searchClientIdCard = string.Empty;
+
+            _isAfmSearchMode = true;
+            _hasSearched = true;
+
+            var request = new FBClientsSearchRequest
+            {
+                ModuleId = ModuleState.ModuleId,
+                IncludeInactive = _includeInactive,
+                IsAfmSearch = true,
+                AfmFirstName = _searchAfmFirstName?.Trim(),
+                AfmLastName = _searchAfmLastName?.Trim(),
+                AfmDOB = _searchAfmDOB
+            };
+
+            _searchResults = await ClientFBClientsService.SearchFBClientsAsync(request) ?? new List<FBClientsSearchResult>();
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Searching Household Members {Error}", ex.Message);
+            AddModuleMessage(Localizer["Message.LoadError"], MessageType.Error);
+        }
+    }
+
+    private void OnAddNewClientClick()
+    {
+        NavigationManager.NavigateTo(EditUrl("Add", "TabFocus=Client"));
+    }
+
+    private void EditClientRecord(int clientId)
+    {
+        var queryParts = new List<string> { $"id={clientId}" };
+
+        if (!string.IsNullOrWhiteSpace(_searchClientIdCard))
+        {
+            queryParts.Add($"cidcard={Uri.EscapeDataString(_searchClientIdCard.Trim())}");
+        }
+        if (!string.IsNullOrWhiteSpace(_searchFirstName))
+        {
+            queryParts.Add($"fname={Uri.EscapeDataString(_searchFirstName.Trim())}");
+        }
+        if (!string.IsNullOrWhiteSpace(_searchLastName))
+        {
+            queryParts.Add($"lname={Uri.EscapeDataString(_searchLastName.Trim())}");
+        }
+        if (!string.IsNullOrWhiteSpace(_searchAddress))
+        {
+            queryParts.Add($"address={Uri.EscapeDataString(_searchAddress.Trim())}");
+        }
+        if (!string.IsNullOrWhiteSpace(_searchClientId))
+        {
+            queryParts.Add($"clientid={Uri.EscapeDataString(_searchClientId.Trim())}");
+        }
+        if (_includeInactive)
+        {
+            queryParts.Add($"inactive={_includeInactive}");
+        }
+
+        NavigationManager.NavigateTo(EditUrl("Edit", string.Join("&", queryParts)));
+    }
+
+    private static string FormatNullDate(DateOnly? date)
+    {
+        if (!date.HasValue || date.Value <= new DateOnly(1901, 1, 1))
+        {
+            return string.Empty;
+        }
+        return date.Value.ToString("MM/dd/yyyy", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatAge(DateOnly? dob)
+    {
+        if (!dob.HasValue || dob.Value <= new DateOnly(1901, 1, 1))
+        {
+            return string.Empty;
+        }
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var age = today.Year - dob.Value.Year;
+        if (dob.Value > today.AddYears(-age))
+        {
+            age--;
+        }
+        return age >= 0 ? age.ToString(CultureInfo.InvariantCulture) : string.Empty;
     }
 }

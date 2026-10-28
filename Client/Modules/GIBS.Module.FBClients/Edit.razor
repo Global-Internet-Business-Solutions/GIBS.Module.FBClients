@@ -1,33 +1,1175 @@
 @using Oqtane.Modules.Controls
 @using GIBS.Module.FBClients.Services
 @using GIBS.Module.FBClients.Models
+@using System.Globalization
 
 @namespace GIBS.Module.FBClients
 @inherits ModuleBase
 @inject IFBClientsService ClientFBClientsService
+@inject ISettingService SettingService
+@inject IUserRoleService UserRoleService
 @inject NavigationManager NavigationManager
 @inject IStringLocalizer<Edit> Localizer
 
-<form @ref="form" class="@(validated ? " was-validated" : "needs-validation" )" novalidate>
-    <div class="container">
-        <div class="row mb-1 align-items-center">
-            <Label Class="col-sm-3" For="name" HelpText="Enter a name" ResourceKey="Name">Name: </Label>
-            <div class="col-sm-9">
-                <input id="name" class="form-control" @bind="@_name" required />
-            </div>
-        </div>
-    </div>
-    <button type="button" class="btn btn-success" @onclick="Save">@Localizer["Save"]</button>
-    <NavLink class="btn btn-secondary" href="@NavigateUrl()">@Localizer["Cancel"]</NavLink>
-    <br /><br />
-    @if (PageState.Action == "Edit")
+@if (_initialized)
+{
+    @if (_id > 0)
     {
-    <AuditInfo CreatedBy="@_createdby" CreatedOn="@_createdon" ModifiedBy="@_modifiedby" ModifiedOn="@_modifiedon"></AuditInfo>
+        <div class="row mb-2 border rounded bg-light p-2 align-items-center">
+            <div class="col-md-5 ClientNameHeader">
+                @if (_settings.ShowPhotoID)
+                {
+                    <div class="mb-1">
+                        <a class="btn btn-sm btn-outline-primary" href="@EditUrl("Camera", $"id={_id}")">Manage PhotoID</a>
+                    </div>
+                }
+                <div>@GetClientHeaderBlock()</div>
+                <div class="text-danger">Client ID: @(_client.LegacyClientId ?? _client.FBClientsId)</div>
+            </div>
+            <div class="col-md-2 text-center">
+                @if (!string.IsNullOrEmpty(_clientPhotoDataUrl))
+                {
+                    <img src="@_clientPhotoDataUrl" alt="Client Photo" height="100" class="hover-zoom rounded border" />
+                }
+            </div>
+            <div class="col-md-5 ClientNameHeaderRight">
+                <div class="text-primary">Qualifies for @_qualifiesForBags Bag(s)</div>
+                <div>
+                    @if (_settings.ShowVisitStopLight)
+                    {
+                        if (_visitEligible)
+                        {
+                            <span class="badge bg-success me-1" title="Eligible for Visit">&#9679; GO</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-danger me-1" title="Visit Window Not Met">&#9679; STOP</span>
+                        }
+                    }
+                    <span>@_lastVisitSummary</span>
+                </div>
+                <div>Total in Household: @_householdTotal</div>
+                <div class="fs-6">@_ageGroupsSummary</div>
+                @if (_settings.ShowIncExpSummary)
+                {
+                    <div class="@(_netIncomeExpense >= 0 ? "text-success" : "text-danger")">
+                        +/- Inc &amp; Exp: @_netIncomeExpense.ToString("C", CultureInfo.CurrentCulture)
+                    </div>
+                }
+                <div class="mt-2">
+                    @if (_settings.ShowPrintShoppingLabel)
+                    {
+                        <button type="button" class="btn btn-outline-primary btn-sm me-1" @onclick="PrintShoppingLabel">Print Shopping Label</button>
+                    }
+                    @if (_settings.ShowPrintBarCodeLabel)
+                    {
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="PrintBarcodeLabel">Print Barcode Label</button>
+                    }
+                </div>
+            </div>
+            @if (_client.SubjectToReview || !string.IsNullOrWhiteSpace(_client.ClientNote))
+            {
+                <div class="col-12 ClientNotesQuickView">
+                    @if (_client.SubjectToReview)
+                    {
+                        <span class="badge bg-danger me-2">FLAGGED FOR REVIEW</span>
+                    }
+                    <span>@_client.ClientNote</span>
+                </div>
+            }
+        </div>
     }
-</form>
+
+    @if (_verificationAlerts.Count > 0)
+    {
+        <div class="alert @(_id > 0 ? "alert-warning" : "alert-info") mb-3">
+            @foreach (var alert in _verificationAlerts)
+            {
+                <div>@alert</div>
+            }
+        </div>
+    }
+
+    <TabStrip ActiveTab="@_activeTab" Refresh="true">
+        <TabPanel Name="Client" Heading="Client" ResourceKey="TabClient">
+            <form @ref="_clientForm" class="@(_clientValidated ? "was-validated" : "needs-validation")" novalidate>
+                <div class="d-flex justify-content-end gap-2 mb-3">
+                    <button type="button" class="btn btn-primary" @onclick="SaveClient">@Localizer["Save"]</button>
+                    @if (_id > 0 && _canDeleteRecord)
+                    {
+                        <ActionDialog Header="Delete Client" Message="Are You Sure You Wish To Permanently Delete This Client?" Action="Delete" Security="SecurityAccessLevel.Edit" Class="btn btn-danger" OnClick="@(async () => await DeleteClient())" ResourceKey="DeleteClient" />
+                        <a class="btn btn-secondary" href="@EditUrl("ClientMerge", $"id={_id}")">@Localizer["Merge"]</a>
+                    }
+                    <NavLink class="btn btn-outline-secondary" href="@GetReturnToSearchUrl()">@Localizer["Cancel"]</NavLink>
+                </div>
+
+                <Section Name="DemographicsSection" Heading="Client Name & Demographics" ResourceKey="SectionDemographics" Expanded="true">
+                    <div class="container">
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="ddlIsActive" HelpText="Set Client Active or Inactive" ResourceKey="lblIsActive">Status:</Label>
+                            <div class="col-sm-9">
+                                <select id="ddlIsActive" class="form-select" @bind="_isActiveString">
+                                    <option value="True">Active</option>
+                                    <option value="False">InActive</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        @if (_settings.ShowClientType)
+                        {
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="ddlClientType" HelpText="Select the Client Type" ResourceKey="lblClientType">Client Type:</Label>
+                                <div class="col-sm-9">
+                                    <select id="ddlClientType" class="form-select" value="@(_client.ClientType ?? "Individual")" @onchange="OnClientTypeChanged">
+                                        @foreach (var clientType in _clientTypeOptions)
+                                        {
+                                            <option value="@clientType">@clientType</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                        }
+
+                        @if (_settings.ShowClientServiceLocation)
+                        {
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="ddlClientServiceLocation" HelpText="Where the client originated" ResourceKey="lblClientServiceLocation">Client Origination:</Label>
+                                <div class="col-sm-9">
+                                    <select id="ddlClientServiceLocation" class="form-select" @bind="_client.ServiceLocation">
+                                        @foreach (var loc in _serviceLocationOptions)
+                                        {
+                                            <option value="@loc">@loc</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                        }
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientFirstName" HelpText="Enter Client First Name" ResourceKey="lblClientFirstName">First Name:</Label>
+                            <div class="col-sm-9">
+                                <input id="txtClientFirstName" class="form-control" maxlength="30" @bind="_client.ClientFirstName" disabled="@IsGroupOrPalletClient" required="@IsFirstNameRequired" />
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientMiddleInitial" HelpText="Enter Client Middle Name or Initial" ResourceKey="lblClientMiddleInitial">Middle Name:</Label>
+                            <div class="col-sm-9">
+                                <input id="txtClientMiddleInitial" class="form-control" maxlength="30" @bind="_client.ClientMiddleInitial" disabled="@IsGroupOrPalletClient" />
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientLastName" HelpText="Enter Client Last Name" ResourceKey="lblClientLastName">@GetLastNameLabel()</Label>
+                            <div class="col-sm-9">
+                                <input id="txtClientLastName" class="form-control" maxlength="30" @bind="_client.ClientLastName" required />
+                            </div>
+                        </div>
+
+                        @if (_settings.ShowSuffix)
+                        {
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="ddlClientSuffix" HelpText="Select Client Suffix" ResourceKey="lblClientSuffix">Suffix:</Label>
+                                <div class="col-sm-9">
+                                    <select id="ddlClientSuffix" class="form-select" @bind="_client.ClientSuffix">
+                                        <option value=""></option>
+                                        @foreach (var suffix in _suffixOptions)
+                                        {
+                                            <option value="@suffix">@suffix</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                        }
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientDOB" HelpText="Enter Client Birth Date" ResourceKey="lblClientDOB">Birth Date:</Label>
+                            <div class="col-sm-9">
+                                <input id="txtClientDOB" type="date" class="form-control" @bind="_clientDobInput" disabled="@IsGroupOrPalletClient" required="@IsDobRequired" />
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="ddlClientGender" HelpText="Select Client Gender" ResourceKey="lblClientGender">Gender:</Label>
+                            <div class="col-sm-9">
+                                <select id="ddlClientGender" class="form-select" @bind="_client.ClientGender" required="@IsGenderRequired">
+                                    <option value="">----</option>
+                                    <option value="Male">Male</option>
+                                    <option value="Female">Female</option>
+                                    <option value="Non-Label">Non-Labeling</option>
+                                    <option value="NoAnswer">Prefers Not To Answer</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        @if (_settings.ShowEthnicity)
+                        {
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="ddlEthnicity" HelpText="Select Client Ethnicity" ResourceKey="lblEthnicity">Ethnicity:</Label>
+                                <div class="col-sm-9">
+                                    <select id="ddlEthnicity" class="form-select" @bind="_client.ClientEthnicity" required="@IsEthnicityRequired">
+                                        <option value=""></option>
+                                        @foreach (var eth in _ethnicityOptions)
+                                        {
+                                            <option value="@eth">@eth</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                        }
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="ddlClientLanguage" HelpText="Select Preferred Language" ResourceKey="lblClientLanguage">Preferred Language:</Label>
+                            <div class="col-sm-9">
+                                <select id="ddlClientLanguage" class="form-select" @bind="_client.ClientLanguage" required="@_settings.ShowRequiredFields">
+                                    <option value=""></option>
+                                    @foreach (var lang in _languageOptions)
+                                    {
+                                        <option value="@lang.Key">@lang.Value</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtVerifyDate" HelpText="Date Client Identity & DOB were verified" ResourceKey="lblVerifyDate">Client Verified Date:</Label>
+                            <div class="col-sm-5">
+                                <div class="input-group">
+                                    <input id="txtVerifyDate" type="date" class="form-control" @bind="_clientVerifyDateInput" />
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="SetClientVerifiedToday">Today</button>
+                                </div>
+                            </div>
+                            <div class="col-sm-4">
+                                <div class="form-check">
+                                    <input id="cbxClientDOBVerify" type="checkbox" class="form-check-input" @bind="_client.ClientDOBVerify" />
+                                    <label class="form-check-label" for="cbxClientDOBVerify">@Localizer["lblClientDOBVerify.Text"]</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </Section>
+
+                <Section Name="AddressSection" Heading="Address, E-Mail & Phone" ResourceKey="SectionAddress" Expanded="true">
+                    <div class="container">
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientAddress" HelpText="Street Number and Street Name ONLY! Use the Apt./Unit input below for apartments, units, suites, room #'s, etc." ResourceKey="lblClientAddress">Address:</Label>
+                            <div class="col-sm-9">
+                                <input id="txtClientAddress" class="form-control" maxlength="50" @bind="_client.ClientAddress" required />
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientUnit" HelpText="Apartment, Unit, Suite or Room Number" ResourceKey="lblClientUnit">Apt./Unit:</Label>
+                            <div class="col-sm-9">
+                                <input id="txtClientUnit" class="form-control" maxlength="20" @bind="_client.ClientUnit" />
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="ddlClientCity" HelpText="Select Town" ResourceKey="lblClientCity">Town:</Label>
+                            <div class="col-sm-9">
+                                <select id="ddlClientCity" class="form-select" value="@(_client.ClientCity ?? string.Empty)" @onchange="OnClientCityChanged" required>
+                                    <option value="">Select Town</option>
+                                    @foreach (var town in _townOptions)
+                                    {
+                                        <option value="@town">@town</option>
+                                    }
+                                    <option value="OTHER">OTHER</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="ddlClientTown" HelpText="Select Village" ResourceKey="lblClientTown">Village:</Label>
+                            <div class="col-sm-9">
+                                @if (string.Equals(_client.ClientCity, "OTHER", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <input id="txtClientTown" class="form-control" maxlength="20" @bind="_client.ClientTown" placeholder="Enter Town/Village" />
+                                }
+                                else
+                                {
+                                    <select id="ddlClientTown" class="form-select" @bind="_client.ClientTown">
+                                        <option value=""></option>
+                                        @foreach (var village in GetVillageOptionsForCity(_client.ClientCity))
+                                        {
+                                            <option value="@village">@village</option>
+                                        }
+                                    </select>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="ddlClientState" HelpText="Select State" ResourceKey="lblClientState">State:</Label>
+                            <div class="col-sm-9">
+                                <input id="ddlClientState" class="form-control" maxlength="20" @bind="_client.ClientState" />
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientZipCode" HelpText="Enter 5-digit or 9-digit Zip Code" ResourceKey="lblClientZipCode">Zip Code:</Label>
+                            <div class="col-sm-9">
+                                <input id="txtClientZipCode" class="form-control" maxlength="10" @bind="_client.ClientZipCode" required="@_settings.ReqZipCode" />
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientAddressVerifyDate" HelpText="Date Client Address was verified" ResourceKey="lblClientAddressVerify">Address Verified:</Label>
+                            <div class="col-sm-5">
+                                <div class="input-group">
+                                    <input id="txtClientAddressVerifyDate" type="date" class="form-control" @bind="_clientAddressVerifyDateInput" />
+                                    <button type="button" class="btn btn-outline-secondary" @onclick="SetAddressVerifiedToday">Today</button>
+                                </div>
+                            </div>
+                            <div class="col-sm-4">
+                                <div class="form-check">
+                                    <input id="cbxClientAddressVerify" type="checkbox" class="form-check-input" @bind="_client.ClientAddressVerify" />
+                                    <label class="form-check-label" for="cbxClientAddressVerify">Address Verified</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (_settings.ShowOneBagOnly)
+                        {
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="cbxOneBagOnly" HelpText="Restrict client to 1 bag regardless of household size" ResourceKey="lblOneBagOnly">One Bag Client:</Label>
+                                <div class="col-sm-9">
+                                    <input id="cbxOneBagOnly" type="checkbox" class="form-check-input" @bind="_client.OneBagOnly" />
+                                </div>
+                            </div>
+                        }
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientEmailAddress" HelpText="Enter Client E-Mail Address" ResourceKey="lblClientEmailAddress">E-Mail Address:</Label>
+                            <div class="col-sm-9">
+                                <input id="txtClientEmailAddress" type="email" class="form-control" maxlength="50" @bind="_client.ClientEmailAddress" />
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientPhone" HelpText="Enter Client Phone Number" ResourceKey="lblClientPhone">Phone Number:</Label>
+                            <div class="col-sm-5">
+                                <input id="txtClientPhone" class="form-control" maxlength="25" @bind="_client.ClientPhone" />
+                            </div>
+                            <div class="col-sm-4">
+                                <select id="ddlClientPhoneType" class="form-select" @bind="_client.ClientPhoneType">
+                                    <option value="">-- Type --</option>
+                                    <option value="Home">Home</option>
+                                    <option value="Cell">Cell</option>
+                                    <option value="Work">Work</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </Section>
+
+                <Section Name="OtherSection" Heading="Other" ResourceKey="SectionOther" Expanded="true">
+                    <div class="container">
+                        @if (_settings.ShowPrimaryIncomeSource)
+                        {
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="ddlPrimaryIncomeSource" HelpText="Select Primary Income Source" ResourceKey="lblPrimaryIncomeSource">Primary Income Source:</Label>
+                                <div class="col-sm-9">
+                                    <select id="ddlPrimaryIncomeSource" class="form-select" @bind="_client.PrimaryIncomeSource" required="@IsPrimaryIncomeSourceRequired">
+                                        <option value=""></option>
+                                        @foreach (var src in _primaryIncomeSourceOptions)
+                                        {
+                                            <option value="@src">@src</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                        }
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="cblTrueFalseQuestions" HelpText="Select all program questions that apply to this client" ResourceKey="lblTrueFalseQuestions">Check All That Apply:</Label>
+                            <div class="col-sm-9">
+                                <ul id="cblTrueFalseQuestions" class="myGroupCheckBox">
+                                    @foreach (var question in _trueFalseQuestionOptions)
+                                    {
+                                        var qKey = question;
+                                        <li>
+                                            <div class="form-check">
+                                                <input type="checkbox" class="form-check-input" id="@($"tf_{qKey}")" checked="@GetTfAnswer(qKey)" @onchange="@(e => SetTfAnswer(qKey, (bool)(e.Value ?? false)))" />
+                                                <label class="form-check-label" for="@($"tf_{qKey}")">@qKey</label>
+                                            </div>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="ddlCaseWorker" HelpText="Select Interviewer / CaseWorker" ResourceKey="lblCaseWorker">Interviewer:</Label>
+                            <div class="col-sm-9">
+                                <select id="ddlCaseWorker" class="form-select" @bind="_caseWorkerIdString" required="@_settings.ShowRequiredFields">
+                                    <option value="">Select</option>
+                                    @foreach (var cw in _caseWorkers)
+                                    {
+                                        <option value="@cw.UserId.ToString()">@cw.DisplayName</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+
+                        @if (_settings.ShowDisabilities)
+                        {
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="cblDisability" HelpText="Select all disabilities that apply" ResourceKey="lblDisability">Disabilities:</Label>
+                                <div class="col-sm-9">
+                                    <ul id="cblDisability" class="myGroupCheckBox">
+                                        @foreach (var dis in _disabilityOptions)
+                                        {
+                                            var dKey = dis;
+                                            <li>
+                                                <div class="form-check">
+                                                    <input type="checkbox" class="form-check-input" id="@($"dis_{dKey}")" checked="@HasDisability(dKey)" @onchange="@(e => ToggleDisability(dKey, (bool)(e.Value ?? false)))" />
+                                                    <label class="form-check-label" for="@($"dis_{dKey}")">@dKey</label>
+                                                </div>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            </div>
+                        }
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="cbxSubjectToReview" HelpText="Flag this client record for supervisor review" ResourceKey="lblSubjectToReview">Subject to Review:</Label>
+                            <div class="col-sm-9">
+                                <input id="cbxSubjectToReview" type="checkbox" class="form-check-input" @bind="_client.SubjectToReview" />
+                            </div>
+                        </div>
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="txtClientNote" HelpText="Notes regarding this client" ResourceKey="lblClientNote">Client Note:</Label>
+                            <div class="col-sm-9">
+                                <textarea id="txtClientNote" class="form-control" rows="4" maxlength="1000" @bind="_client.ClientNote"></textarea>
+                            </div>
+                        </div>
+
+                        @if (_settings.ShowClientIdCard)
+                        {
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="txtClientIdCard" HelpText="Client ID Card Number" ResourceKey="lblClientIdCard">Client ID Card:</Label>
+                                <div class="col-sm-9">
+                                    <input id="txtClientIdCard" class="form-control" maxlength="50" @bind="_client.ClientIdCard" />
+                                </div>
+                            </div>
+                        }
+
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="cbxIsLocked" HelpText="When checked, visits cannot be added for this client" ResourceKey="lblIsLocked">Locked Account:</Label>
+                            <div class="col-sm-9">
+                                <input id="cbxIsLocked" type="checkbox" class="form-check-input" @bind="_isLockedBool" disabled="@(!_canDeleteRecord)" />
+                            </div>
+                        </div>
+
+                        @if (_id > 0)
+                        {
+                            <div class="row mt-3">
+                                <div class="col-12">
+                                    <AuditInfo CreatedBy="@_client.CreatedBy" CreatedOn="@_client.CreatedOn" ModifiedBy="@_client.ModifiedBy" ModifiedOn="@_client.ModifiedOn" />
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </Section>
+            </form>
+        </TabPanel>
+
+        <TabPanel Name="AFM" Heading="Household Members" ResourceKey="TabAFM">
+            @if (_id <= 0)
+            {
+                <div class="alert alert-info">Please save the client record on the Client tab before adding household members.</div>
+            }
+            else
+            {
+                <div class="table-responsive mb-3">
+                    <table class="table table-striped table-bordered align-middle">
+                        <thead>
+                            <tr>
+                                <th>Edit</th>
+                                <th>Delete</th>
+                                @if (_settings.ShowXmasToys)
+                                {
+                                    <th>Christmas Toys</th>
+                                }
+                                <th>First Name</th>
+                                <th>M.I.</th>
+                                <th>Last Name</th>
+                                @if (_settings.ShowSuffix)
+                                {
+                                    <th>Suffix</th>
+                                }
+                                <th>DOB</th>
+                                <th>Age</th>
+                                <th>Gender</th>
+                                @if (_settings.ShowEthnicity)
+                                {
+                                    <th>Ethnicity</th>
+                                }
+                                <th>Verified</th>
+                                @if (_settings.ShowRelationshipToClient)
+                                {
+                                    <th>Relationship</th>
+                                }
+                                <th>Last Update</th>
+                                <th>Updated By</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_familyMembers.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="15" class="text-center text-muted">No additional household members recorded.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var afm in _familyMembers)
+                                {
+                                    var age = CalculateAge(afm.ClAddFamMemDOB);
+                                    <tr>
+                                        <td>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="@(() => EditFamilyMember(afm))">Edit</button>
+                                        </td>
+                                        <td>
+                                            <ActionDialog Header="Delete Household Member" Message="Are you sure you want to delete this family member?" Action="Delete" Security="SecurityAccessLevel.Edit" Class="btn btn-sm btn-outline-danger" OnClick="@(async () => await DeleteFamilyMember(afm.FBClientsAddFamMemId))" />
+                                        </td>
+                                        @if (_settings.ShowXmasToys)
+                                        {
+                                            <td>
+                                                @if (age.HasValue && age.Value <= 16)
+                                                {
+                                                    <button type="button" class="btn btn-sm @(HasCurrentYearToys(afm.FBClientsAddFamMemId) ? "btn-success" : "btn-outline-secondary")" disabled="@(!afm.AFMDOBVerify)" title="@(afm.AFMDOBVerify ? "Manage Christmas Toys" : "Verify DOB first to enable Christmas Toys")" @onclick="@(() => OpenChristmasForm(afm))">
+                                                        Toys @(HasCurrentYearToys(afm.FBClientsAddFamMemId) ? "(Verified)" : "")
+                                                    </button>
+                                                }
+                                            </td>
+                                        }
+                                        <td>@afm.ClAddFamMemFirstName</td>
+                                        <td>@afm.AFMMiddleInitial</td>
+                                        <td>@afm.ClAddFamMemLastName</td>
+                                        @if (_settings.ShowSuffix)
+                                        {
+                                            <td>@afm.AFMSuffix</td>
+                                        }
+                                        <td>@(afm.ClAddFamMemDOB?.ToString("MM/dd/yyyy"))</td>
+                                        <td>@(age?.ToString() ?? "")</td>
+                                        <td>@afm.AFMGender</td>
+                                        @if (_settings.ShowEthnicity)
+                                        {
+                                            <td>@afm.AFMEthnicity</td>
+                                        }
+                                        <td>@(afm.AFMDOBVerify ? "Yes" : "No")</td>
+                                        @if (_settings.ShowRelationshipToClient)
+                                        {
+                                            <td>@afm.AFMRelationship</td>
+                                        }
+                                        <td>@((afm.LegacyLastModifiedOnDate ?? afm.ModifiedOn).ToString("MM/dd/yyyy"))</td>
+                                        <td>@(string.IsNullOrEmpty(afm.ModifiedBy) ? afm.CreatedBy : afm.ModifiedBy)</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                @if (_showChristmasForm && _selectedXmasAfm != null)
+                {
+                    <div class="card border-success mb-3">
+                        <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                            <span>Christmas Toys — @_selectedXmasAfm.ClAddFamMemFirstName @_selectedXmasAfm.ClAddFamMemLastName (Age: @(CalculateAge(_selectedXmasAfm.ClAddFamMemDOB)?.ToString() ?? "N/A"))</span>
+                            <button type="button" class="btn btn-sm btn-light" @onclick="CloseChristmasForm">Close</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="row mb-2 align-items-center">
+                                <label class="col-sm-3 col-form-label fw-bold" for="txtXmasYear">Year:</label>
+                                <div class="col-sm-4">
+                                    <input id="txtXmasYear" class="form-control" value="@_xmasRecord.xMasYear" readonly />
+                                </div>
+                                <div class="col-sm-5 text-end">
+                                    @if (_xmasRecord.xMasId > 0 && _canDeleteRecord)
+                                    {
+                                        <ActionDialog Header="Delete Christmas Record" Message="Are you sure you want to delete this Christmas record?" Action="Delete Xmas Record" Security="SecurityAccessLevel.Edit" Class="btn btn-sm btn-danger" OnClick="@(async () => await DeleteChristmasRecord(_xmasRecord.xMasId))" />
+                                    }
+                                </div>
+                            </div>
+
+                            @if (!_settings.ShowXmasGiftFields && IsChildAgeInXmasSizeRange(_selectedXmasAfm.ClAddFamMemDOB))
+                            {
+                                <div class="row mb-2 align-items-center">
+                                    <label class="col-sm-3 col-form-label fw-bold" for="ddlSizes">Size:</label>
+                                    <div class="col-sm-9">
+                                        <select id="ddlSizes" class="form-select" @bind="_xmasRecord.Sizes">
+                                            <option value=""></option>
+                                            <option value="Men's Small">Men's Small</option>
+                                            <option value="Men's Medium">Men's Medium</option>
+                                            <option value="Men's Large">Men's Large</option>
+                                            <option value="Men's Extra-Large">Men's Extra-Large</option>
+                                            <option value="Women's Small">Women's Small</option>
+                                            <option value="Women's Medium">Women's Medium</option>
+                                            <option value="Women's Large">Women's Large</option>
+                                            <option value="Women's Extra-Large">Women's Extra-Large</option>
+                                            <option value="N/A">N/A</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            }
+
+                            @if (_settings.ShowXmasGiftFields)
+                            {
+                                <div class="row mb-2 align-items-center">
+                                    <label class="col-sm-3 col-form-label fw-bold" for="txtXmasGift1">Gift 1 / Size:</label>
+                                    <div class="col-sm-5">
+                                        <input id="txtXmasGift1" class="form-control" maxlength="50" placeholder="Gift 1" @bind="_xmasRecord.XmasGift1" />
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <input id="txtXmasGift1Size" class="form-control" maxlength="50" placeholder="Gift 1 Size" @bind="_xmasRecord.XmasGift1Size" />
+                                    </div>
+                                </div>
+                                <div class="row mb-2 align-items-center">
+                                    <label class="col-sm-3 col-form-label fw-bold" for="txtXmasGift2">Gift 2 / Size:</label>
+                                    <div class="col-sm-5">
+                                        <input id="txtXmasGift2" class="form-control" maxlength="50" placeholder="Gift 2" @bind="_xmasRecord.XmasGift2" />
+                                    </div>
+                                    <div class="col-sm-4">
+                                        <input id="txtXmasGift2Size" class="form-control" maxlength="50" placeholder="Gift 2 Size" @bind="_xmasRecord.XmasGift2Size" />
+                                    </div>
+                                </div>
+                                <div class="row mb-2 align-items-center">
+                                    <label class="col-sm-3 col-form-label fw-bold" for="txtXmasGiftRecordID">Gift Record ID:</label>
+                                    <div class="col-sm-9">
+                                        <input id="txtXmasGiftRecordID" class="form-control" maxlength="40" @bind="_xmasRecord.XmasGiftRecordID" />
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="row mb-2 align-items-center">
+                                <label class="col-sm-3 col-form-label fw-bold" for="txtXmasNotes">Notes:</label>
+                                <div class="col-sm-9">
+                                    <textarea id="txtXmasNotes" class="form-control" rows="2" maxlength="500" @bind="_xmasRecord.XmasNotes"></textarea>
+                                </div>
+                            </div>
+
+                            <div class="row mb-2 align-items-center">
+                                <label class="col-sm-3 col-form-label fw-bold" for="cbxBikeRaffle">Enter Bike Raffle:</label>
+                                <div class="col-sm-9">
+                                    <input id="cbxBikeRaffle" type="checkbox" class="form-check-input me-2" @bind="_xmasBikeRaffleBool" disabled="@_xmasBikeRaffleDisabled" />
+                                    @if (!string.IsNullOrEmpty(_xmasBikeNote))
+                                    {
+                                        <span class="text-danger">@_xmasBikeNote</span>
+                                    }
+                                </div>
+                            </div>
+
+                            @if (_canDeleteRecord)
+                            {
+                                <div class="row mb-2 align-items-center">
+                                    <label class="col-sm-3 col-form-label fw-bold" for="txtBikeAwardedDate">Bike Awarded:</label>
+                                    <div class="col-sm-9">
+                                        <input id="txtBikeAwardedDate" type="date" class="form-control" @bind="_xmasBikeAwardedDateInput" />
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="row mb-2 align-items-center">
+                                <label class="col-sm-3 col-form-label fw-bold" for="txtReceivedToysDate">Received Toys:</label>
+                                <div class="col-sm-9">
+                                    <input id="txtReceivedToysDate" type="date" class="form-control" @bind="_xmasReceivedToysDateInput" />
+                                </div>
+                            </div>
+
+                            <div class="d-flex gap-2 mt-3">
+                                <button type="button" class="btn btn-success" @onclick="SaveChristmasRecord">Save Christmas Record</button>
+                                <button type="button" class="btn btn-secondary" @onclick="CloseChristmasForm">Cancel</button>
+                            </div>
+
+                            @if (_afmChristmasHistory.Count > 0)
+                            {
+                                <hr />
+                                <h6>Christmas History</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered">
+                                        <thead>
+                                            <tr>
+                                                <th>Year</th>
+                                                <th>Toys Verified</th>
+                                                <th>Size</th>
+                                                <th>Notes</th>
+                                                <th>Gift 1</th>
+                                                <th>Gift 1 Size</th>
+                                                <th>Gift 2</th>
+                                                <th>Gift 2 Size</th>
+                                                <th>Bike Raffle</th>
+                                                <th>Bike Awarded Date</th>
+                                                <th>Updated By</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var hist in _afmChristmasHistory)
+                                            {
+                                                <tr>
+                                                    <td>@hist.xMasYear</td>
+                                                    <td>@(hist.VerifiedToys == true ? "Yes" : "No")</td>
+                                                    <td>@hist.Sizes</td>
+                                                    <td>@hist.XmasNotes</td>
+                                                    <td>@hist.XmasGift1</td>
+                                                    <td>@hist.XmasGift1Size</td>
+                                                    <td>@hist.XmasGift2</td>
+                                                    <td>@hist.XmasGift2Size</td>
+                                                    <td>@(hist.BikeRaffle == true ? "Yes" : "No")</td>
+                                                    <td>@(hist.BikeAwardedDate?.ToString("MM/dd/yyyy"))</td>
+                                                    <td>@(string.IsNullOrEmpty(hist.ModifiedBy) ? hist.CreatedBy : hist.ModifiedBy)</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <Section Name="AFMFormSection" Heading="Additional Family Member" ResourceKey="SectionAFMForm" Expanded="true">
+                    <form @ref="_afmForm" class="@(_afmValidated ? "was-validated" : "needs-validation")" novalidate>
+                        <div class="container">
+                            <div class="d-flex justify-content-end gap-2 mb-2">
+                                <button type="button" class="btn btn-primary" @onclick="SaveFamilyMember">Save/Update</button>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="ResetFamilyMemberForm">Clear</button>
+                            </div>
+
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="txtClAddFamMemFirstName" HelpText="Enter Family Member First Name" ResourceKey="lblClAddFamMemFirstName">First Name:</Label>
+                                <div class="col-sm-9">
+                                    <input id="txtClAddFamMemFirstName" class="form-control" maxlength="50" @bind="_editingAfm.ClAddFamMemFirstName" required />
+                                </div>
+                            </div>
+
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="txtAFMMiddleInitial" HelpText="Enter Middle Name or Initial" ResourceKey="lblAFMMiddleInitial">Middle Name/Initial:</Label>
+                                <div class="col-sm-9">
+                                    <input id="txtAFMMiddleInitial" class="form-control" maxlength="15" @bind="_editingAfm.AFMMiddleInitial" />
+                                </div>
+                            </div>
+
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="txtClAddFamMemLastName" HelpText="Enter Family Member Last Name" ResourceKey="lblClAddFamMemLastName">Last Name:</Label>
+                                <div class="col-sm-9">
+                                    <input id="txtClAddFamMemLastName" class="form-control" maxlength="50" @bind="_editingAfm.ClAddFamMemLastName" required />
+                                </div>
+                            </div>
+
+                            @if (_settings.ShowSuffix)
+                            {
+                                <div class="row mb-2 align-items-center">
+                                    <Label Class="col-sm-3" For="ddlAFMSuffix" HelpText="Select Suffix" ResourceKey="lblAFMSuffix">Suffix:</Label>
+                                    <div class="col-sm-9">
+                                        <select id="ddlAFMSuffix" class="form-select" @bind="_editingAfm.AFMSuffix">
+                                            <option value=""></option>
+                                            @foreach (var suffix in _suffixOptions)
+                                            {
+                                                <option value="@suffix">@suffix</option>
+                                            }
+                                        </select>
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="txtClAddFamMemDOB" HelpText="Enter Birth Date" ResourceKey="lblClAddFamMemDOB">Birth Date:</Label>
+                                <div class="col-sm-5">
+                                    <input id="txtClAddFamMemDOB" type="date" class="form-control" @bind="_afmDobInput" required="@_settings.ShowRequiredFields" />
+                                </div>
+                                <div class="col-sm-4">
+                                    <div class="form-check">
+                                        <input id="cbxAFMDOBVerify" type="checkbox" class="form-check-input" @bind="_editingAfm.AFMDOBVerify" required="@_settings.ReqAFMVerified" />
+                                        <label class="form-check-label" for="cbxAFMDOBVerify">Verified</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            @if (_settings.ShowRelationshipToClient)
+                            {
+                                <div class="row mb-2 align-items-center">
+                                    <Label Class="col-sm-3" For="ddlAFMRelationship" HelpText="Select Relationship to Client" ResourceKey="lblAFMRelationship">Relationship to Client:</Label>
+                                    <div class="col-sm-9">
+                                        <select id="ddlAFMRelationship" class="form-select" @bind="_editingAfm.AFMRelationship" required="@_settings.ReqAFMRelationship">
+                                            <option value="">Select</option>
+                                            @foreach (var rel in _relationshipOptions)
+                                            {
+                                                <option value="@rel">@rel</option>
+                                            }
+                                        </select>
+                                    </div>
+                                </div>
+                            }
+
+                            <div class="row mb-2 align-items-center">
+                                <Label Class="col-sm-3" For="ddlAFMGender" HelpText="Select Gender" ResourceKey="lblAFMGender">Gender:</Label>
+                                <div class="col-sm-9">
+                                    <select id="ddlAFMGender" class="form-select" @bind="_editingAfm.AFMGender" required="@_settings.ReqGender">
+                                        <option value="">Select</option>
+                                        <option value="Male">Male</option>
+                                        <option value="Female">Female</option>
+                                        <option value="Non-Label">Non-Labeling</option>
+                                        <option value="NoAnswer">Prefers Not To Answer</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            @if (_settings.ShowEthnicity)
+                            {
+                                <div class="row mb-2 align-items-center">
+                                    <Label Class="col-sm-3" For="ddlAFMEthnicity" HelpText="Select Ethnicity" ResourceKey="lblAFMEthnicity">Ethnicity:</Label>
+                                    <div class="col-sm-9">
+                                        <select id="ddlAFMEthnicity" class="form-select" @bind="_editingAfm.AFMEthnicity" required="@_settings.ReqEthnicity">
+                                            <option value=""></option>
+                                            @foreach (var eth in _ethnicityOptions)
+                                            {
+                                                <option value="@eth">@eth</option>
+                                            }
+                                        </select>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </form>
+                </Section>
+            }
+        </TabPanel>
+
+        <TabPanel Name="IncomeExpense" Heading="@(_settings.ShowExpense ? "Income & Expense" : "Income")" ResourceKey="TabIncomeExpense">
+            @if (_id <= 0)
+            {
+                <div class="alert alert-info">Please save the client record on the Client tab before entering income or expenses.</div>
+            }
+            else
+            {
+                <div class="container mb-3">
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="ddlClientIncome" HelpText="Select Monthly Income Source" ResourceKey="lblClientIncome">Monthly Income:</Label>
+                        <div class="col-sm-4">
+                            <select id="ddlClientIncome" class="form-select" @bind="_incomeSource">
+                                <option value="">Select Income Source</option>
+                                @foreach (var inc in _incomeOptions)
+                                {
+                                    <option value="@inc">@inc</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-sm-3">
+                            <input id="txtIeAmount" type="number" step="0.01" class="form-control" placeholder="Amount" @bind="_incomeAmountInput" />
+                        </div>
+                        <div class="col-sm-2">
+                            <button type="button" class="btn btn-primary w-100" @onclick="SaveIncomeExpense">Save/Update</button>
+                        </div>
+                    </div>
+
+                    @if (_settings.ShowExpense)
+                    {
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="ddlClientExpense" HelpText="Select Monthly Expense" ResourceKey="lblClientExpense">Monthly Expense:</Label>
+                            <div class="col-sm-4">
+                                <select id="ddlClientExpense" class="form-select" @bind="_expenseSource">
+                                    <option value="">Select Expense</option>
+                                    @foreach (var exp in _expenseOptions)
+                                    {
+                                        <option value="@exp">@exp</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-sm-3">
+                                <input id="txtIeExpenseAmount" type="number" step="0.01" class="form-control" placeholder="Amount" @bind="_expenseAmountInput" />
+                            </div>
+                            <div class="col-sm-2">
+                                @if (_editingIeId > 0)
+                                {
+                                    <button type="button" class="btn btn-outline-secondary w-100" @onclick="ResetIncomeExpenseForm">Cancel Edit</button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="row mb-3">
+                    <div class="@(_settings.ShowExpense ? "col-md-6" : "col-md-12")">
+                        <h6>Monthly Income</h6>
+                        <table class="table table-striped table-bordered align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Edit</th>
+                                    <th>Delete</th>
+                                    <th>Source</th>
+                                    <th class="text-end">Amount</th>
+                                    <th>Updated By</th>
+                                    <th>Updated On</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var inc in _incomeAndExpenses.Where(x => string.Equals(x.IeType, "IN", StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    <tr>
+                                        <td>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="@(() => EditIncomeOrExpense(inc))">Edit</button>
+                                        </td>
+                                        <td>
+                                            <ActionDialog Header="Delete Income" Message="Are you sure you want to delete this income item?" Action="Delete" Security="SecurityAccessLevel.Edit" Class="btn btn-sm btn-outline-danger" OnClick="@(async () => await DeleteIncomeOrExpense(inc.IeId))" />
+                                        </td>
+                                        <td>@inc.IeDescription</td>
+                                        <td class="text-end">@((inc.IeAmount ?? 0m).ToString("C", CultureInfo.CurrentCulture))</td>
+                                        <td>@(string.IsNullOrEmpty(inc.ModifiedBy) ? inc.CreatedBy : inc.ModifiedBy)</td>
+                                        <td>@((inc.LegacyLastModifiedOnDate ?? inc.ModifiedOn).ToString("MM/dd/yyyy"))</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr class="fw-bold">
+                                    <td colspan="3" class="text-end">Total Monthly Income:</td>
+                                    <td class="text-end">@_totalMonthlyIncome.ToString("C", CultureInfo.CurrentCulture)</td>
+                                    <td colspan="2"></td>
+                                </tr>
+                                <tr class="fw-bold">
+                                    <td colspan="3" class="text-end">Total Annual Income:</td>
+                                    <td class="text-end">@((_totalMonthlyIncome * 12m).ToString("C", CultureInfo.CurrentCulture))</td>
+                                    <td colspan="2"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    @if (_settings.ShowExpense)
+                    {
+                        <div class="col-md-6">
+                            <h6>Monthly Expenses</h6>
+                            <table class="table table-striped table-bordered align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>Edit</th>
+                                        <th>Delete</th>
+                                        <th>Expense</th>
+                                        <th class="text-end">Amount</th>
+                                        <th>Updated By</th>
+                                        <th>Updated On</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var exp in _incomeAndExpenses.Where(x => string.Equals(x.IeType, "EX", StringComparison.OrdinalIgnoreCase)))
+                                    {
+                                        <tr>
+                                            <td>
+                                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="@(() => EditIncomeOrExpense(exp))">Edit</button>
+                                            </td>
+                                            <td>
+                                                <ActionDialog Header="Delete Expense" Message="Are you sure you want to delete this expense item?" Action="Delete" Security="SecurityAccessLevel.Edit" Class="btn btn-sm btn-outline-danger" OnClick="@(async () => await DeleteIncomeOrExpense(exp.IeId))" />
+                                            </td>
+                                            <td>@exp.IeDescription</td>
+                                            <td class="text-end">@((exp.IeAmount ?? 0m).ToString("C", CultureInfo.CurrentCulture))</td>
+                                            <td>@(string.IsNullOrEmpty(exp.ModifiedBy) ? exp.CreatedBy : exp.ModifiedBy)</td>
+                                            <td>@((exp.LegacyLastModifiedOnDate ?? exp.ModifiedOn).ToString("MM/dd/yyyy"))</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr class="fw-bold">
+                                        <td colspan="3" class="text-end">Total Monthly Expenses:</td>
+                                        <td class="text-end">@_totalMonthlyExpenses.ToString("C", CultureInfo.CurrentCulture)</td>
+                                        <td colspan="2"></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_settings.IncomeEligibilityGuidelines))
+                {
+                    <Section Name="GuidelinesSection" Heading="Click Here for Income Eligibility Guidelines" ResourceKey="SectionGuidelines" Expanded="false">
+                        <div class="p-2">
+                            @((MarkupString)_settings.IncomeEligibilityGuidelines)
+                        </div>
+                    </Section>
+                }
+            }
+        </TabPanel>
+
+        <TabPanel Name="Map" Heading="Map" ResourceKey="TabMap">
+            @if (_id <= 0)
+            {
+                <div class="alert alert-info">Please save the client record on the Client tab before viewing or saving map coordinates.</div>
+            }
+            else
+            {
+                <div class="container">
+                    <div class="row mb-3 align-items-center">
+                        <Label Class="col-sm-2" For="txtLatitude" HelpText="Latitude (decimal 10,5)" ResourceKey="lblLatitude">Latitude:</Label>
+                        <div class="col-sm-3">
+                            <input id="txtLatitude" type="number" step="0.00001" class="form-control" @bind="_client.Latitude" />
+                        </div>
+                        <Label Class="col-sm-2" For="txtLongitude" HelpText="Longitude (decimal 10,5)" ResourceKey="lblLongitude">Longitude:</Label>
+                        <div class="col-sm-3">
+                            <input id="txtLongitude" type="number" step="0.00001" class="form-control" @bind="_client.Longitude" />
+                        </div>
+                        <div class="col-sm-2">
+                            <button type="button" class="btn btn-primary w-100" @onclick="SaveMapCoordinates">Save Map</button>
+                        </div>
+                    </div>
+
+                    <div id="MapDiv" class="border rounded overflow-hidden" style="min-height: 450px;">
+                        @if (!string.IsNullOrEmpty(GetGoogleMapEmbedUrl()))
+                        {
+                            <iframe title="Client Location Map" width="100%" height="450" style="border:0;" loading="lazy" allowfullscreen src="@GetGoogleMapEmbedUrl()"></iframe>
+                        }
+                        else
+                        {
+                            <div class="p-4 text-muted text-center">No map coordinates or address available to display.</div>
+                        }
+                    </div>
+                </div>
+            }
+        </TabPanel>
+
+        <TabPanel Name="Visits" Heading="Client Visits" ResourceKey="TabVisits">
+            @if (_id <= 0)
+            {
+                <div class="alert alert-info">Please save the client record on the Client tab before recording visits.</div>
+            }
+            else
+            {
+                @if (_client.IsLocked == true)
+                {
+                    <div class="alert alert-danger fw-bold">THIS ACCOUNT IS LOCKED - YOU CANNOT ADD A VISIT!</div>
+                }
+
+                <div class="container mb-3">
+                    <div class="d-flex justify-content-end gap-2 mb-2">
+                        <button type="button" class="btn btn-primary" disabled="@(_client.IsLocked == true)" @onclick="SaveVisit">Save/Update Visit</button>
+                        @if (_editingVisit.VisitId > 0)
+                        {
+                            <button type="button" class="btn btn-outline-secondary" @onclick="ResetVisitForm">Cancel Edit</button>
+                        }
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="ddlVisitServiceLocation" HelpText="Select Visit Service Location" ResourceKey="lblVisitServiceLocation">Service Location:</Label>
+                        <div class="col-sm-9">
+                            <select id="ddlVisitServiceLocation" class="form-select" @bind="_editingVisit.ServiceLocation">
+                                @foreach (var loc in _serviceLocationOptions)
+                                {
+                                    <option value="@loc">@loc</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="txtVisitDate" HelpText="Enter Visit Date" ResourceKey="lblVisitDate">Visit Date:</Label>
+                        <div class="col-sm-9">
+                            <input id="txtVisitDate" type="date" class="form-control" @bind="_visitDateInput" />
+                        </div>
+                    </div>
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="ddlVisitNumBags" HelpText="Select Number of Bags" ResourceKey="lblVisitNumBags">Number of Bags:</Label>
+                        <div class="col-sm-9">
+                            <select id="ddlVisitNumBags" class="form-select" @bind="_visitNumBagsString">
+                                @for (int b = 0; b <= 15; b++)
+                                {
+                                    var bagVal = b.ToString();
+                                    <option value="@bagVal">@bagVal</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    @if (string.Equals(_client.ClientType, "Pallet", StringComparison.OrdinalIgnoreCase) && _editingVisit.VisitId == 0)
+                    {
+                        <div class="row mb-2 align-items-center">
+                            <Label Class="col-sm-3" For="ddlRepeatInsert" HelpText="Number of pallet visits to insert" ResourceKey="lblRepeatInsert">Repeat Insert (x) Times:</Label>
+                            <div class="col-sm-9">
+                                <select id="ddlRepeatInsert" class="form-select" @bind="_repeatInsertCount">
+                                    @for (int r = 1; r <= 20; r++)
+                                    {
+                                        <option value="@r">@r</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="row mb-2 align-items-center">
+                        <Label Class="col-sm-3" For="txtVisitNotes" HelpText="Visit Notes" ResourceKey="lblVisitNotes">Notes:</Label>
+                        <div class="col-sm-9">
+                            <textarea id="txtVisitNotes" class="form-control" rows="2" maxlength="800" @bind="_editingVisit.VisitNotes"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-striped table-bordered align-middle">
+                        <thead>
+                            <tr>
+                                <th>Edit</th>
+                                @if (_canDeleteRecord)
+                                {
+                                    <th>Delete</th>
+                                }
+                                <th>Visit Date</th>
+                                <th>Bags</th>
+                                <th>Notes</th>
+                                <th>Location</th>
+                                <th>Signature</th>
+                                <th>Status</th>
+                                <th>Created By</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (_visits.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="9" class="text-center text-muted">No visits recorded for this client.</td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var visit in _visits)
+                                {
+                                    <tr>
+                                        <td>
+                                            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="@(() => EditVisit(visit))">Edit</button>
+                                        </td>
+                                        @if (_canDeleteRecord)
+                                        {
+                                            <td>
+                                                <ActionDialog Header="Delete Visit" Message="Are you sure you want to delete this visit?" Action="Delete" Security="SecurityAccessLevel.Edit" Class="btn btn-sm btn-outline-danger" OnClick="@(async () => await DeleteVisit(visit.VisitId))" />
+                                            </td>
+                                        }
+                                        <td>@visit.VisitDate.ToString("MM/dd/yyyy")</td>
+                                        <td>@(visit.VisitNumBags ?? 0)</td>
+                                        <td>@visit.VisitNotes</td>
+                                        <td>@visit.ServiceLocation</td>
+                                        <td>
+                                            @if (visit.ClientSignature != null && visit.ClientSignature.Length > 0)
+                                            {
+                                                <img src="@($"data:image/png;base64,{Convert.ToBase64String(visit.ClientSignature)}")" alt="Signature" class="sigZoom" />
+                                            }
+                                        </td>
+                                        <td>@GetOrderStatusLabel(visit.OrderStatusCode)</td>
+                                        <td>@(string.IsNullOrEmpty(visit.ModifiedBy) ? visit.CreatedBy : visit.ModifiedBy)</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </TabPanel>
+    </TabStrip>
+}
 
 @code {
     public override SecurityAccessLevel SecurityAccessLevel => SecurityAccessLevel.Edit;
+    public override bool UseAdminContainer => false;
 
     public override string Actions => "Add,Edit";
 
@@ -38,33 +1180,262 @@
         new Stylesheet("_content/GIBS.Module.FBClients/Module.css")
     };
 
-    private ElementReference form;
-    private bool validated = false;
+    private bool _initialized;
+    private int _id = -1;
+    private string _activeTab = "Client";
+    private bool _canDeleteRecord;
 
-    private int _id;
-    private string _name;
-    private string _createdby;
-    private DateTime _createdon;
-    private string _modifiedby;
-    private DateTime _modifiedon;
+    private ElementReference _clientForm;
+    private bool _clientValidated;
+    private ElementReference _afmForm;
+    private bool _afmValidated;
+
+    private FBClientsSettings _settings = new();
+    private Models.FBClients _client = new();
+    private List<FBClientsAddFamMem> _familyMembers = new();
+    private List<FBClientsIncomeAndExpense> _incomeAndExpenses = new();
+    private List<FBClientsVisits> _visits = new();
+    private List<FBClientsChristmas> _christmases = new();
+    private List<FBClientsTrueFalseQuestions> _tfQuestions = new();
+    private List<FBClientsIDPhoto> _idPhotos = new();
+    private List<User> _caseWorkers = new();
+
+    private Dictionary<string, bool> _tfQuestionAnswers = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _selectedDisabilities = new(StringComparer.OrdinalIgnoreCase);
+
+    private string _clientPhotoDataUrl = string.Empty;
+    private int _qualifiesForBags = 1;
+    private bool _visitEligible = true;
+    private string _lastVisitSummary = "Last Visit: Never";
+    private int _householdTotal = 1;
+    private string _ageGroupsSummary = string.Empty;
+    private decimal _totalMonthlyIncome;
+    private decimal _totalMonthlyExpenses;
+    private decimal _netIncomeExpense;
+    private List<string> _verificationAlerts = new();
+
+    // AFM Editing State
+    private FBClientsAddFamMem _editingAfm = new();
+
+    // Christmas Toys Editing State
+    private bool _showChristmasForm;
+    private FBClientsAddFamMem _selectedXmasAfm;
+    private FBClientsChristmas _xmasRecord = new();
+    private List<FBClientsChristmas> _afmChristmasHistory = new();
+    private bool _xmasBikeRaffleDisabled;
+    private string _xmasBikeNote = string.Empty;
+
+    // Income / Expense Editing State
+    private int _editingIeId;
+    private string _incomeSource = string.Empty;
+    private decimal? _incomeAmountInput;
+    private string _expenseSource = string.Empty;
+    private decimal? _expenseAmountInput;
+
+    // Visit Editing State
+    private FBClientsVisits _editingVisit = new() { VisitDate = DateOnly.FromDateTime(DateTime.Today), VisitNumBags = 1 };
+    private int _repeatInsertCount = 1;
+
+    // Option Lists (matching DNN Lists)
+    private readonly List<string> _clientTypeOptions = new() { "Individual", "Group Home", "Pallet" };
+    private readonly List<string> _serviceLocationOptions = new() { "Pantry", "Mobile Pantry", "Home Delivery" };
+    private readonly List<string> _suffixOptions = new() { "Jr.", "Sr.", "II", "III", "IV" };
+    private readonly List<string> _ethnicityOptions = new()
+    {
+        "American Indian or Alaska Native",
+        "Asian",
+        "Black or African American",
+        "Hispanic or Latino",
+        "Native Hawaiian or Other Pacific Islander",
+        "White / Caucasian",
+        "Two or More Races",
+        "Other / Prefer Not to Answer"
+    };
+    private readonly Dictionary<string, string> _languageOptions = new()
+    {
+        { "en", "English" },
+        { "es", "Spanish" },
+        { "pt", "Portuguese" },
+        { "ht", "Haitian Creole" },
+        { "fr", "French" },
+        { "zh", "Chinese" },
+        { "ar", "Arabic" },
+        { "ru", "Russian" },
+        { "vi", "Vietnamese" },
+        { "ot", "Other" }
+    };
+    private readonly List<string> _townOptions = new()
+    {
+        "Barnstable", "Bourne", "Brewster", "Chatham", "Dennis", "Eastham",
+        "Falmouth", "Harwich", "Mashpee", "Orleans", "Provincetown", "Sandwich",
+        "Truro", "Wellfleet", "Yarmouth"
+    };
+    private readonly Dictionary<string, List<string>> _villagesByTown = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "Barnstable", new List<string> { "Barnstable", "Centerville", "Cotuit", "Hyannis", "Marstons Mills", "Osterville", "West Barnstable" } },
+        { "Dennis", new List<string> { "Dennis", "Dennis Port", "East Dennis", "South Dennis", "West Dennis" } },
+        { "Falmouth", new List<string> { "East Falmouth", "Falmouth", "North Falmouth", "Teaticket", "Waquoit", "West Falmouth", "Woods Hole" } },
+        { "Harwich", new List<string> { "East Harwich", "Harwich", "Harwich Port", "North Harwich", "Pleasant Lake", "South Harwich", "West Harwich" } },
+        { "Yarmouth", new List<string> { "Bass River", "South Yarmouth", "West Yarmouth", "Yarmouth Port" } }
+    };
+    private readonly List<string> _primaryIncomeSourceOptions = new()
+    {
+        "Employment", "Social Security", "SSI / SSDI", "Pension / Retirement",
+        "Unemployment", "TANF / TAFDC", "Child Support", "Veterans Benefits", "No Income", "Other"
+    };
+    private readonly List<string> _trueFalseQuestionOptions = new()
+    {
+        "SNAP / Food Stamps", "WIC", "Fuel Assistance", "MassHealth / Medicaid",
+        "Public Housing / Section 8", "Free/Reduced School Lunch", "Veteran", "Homeless"
+    };
+    private readonly List<string> _disabilityOptions = new()
+    {
+        "None", "Physical / Mobility", "Visual", "Hearing", "Cognitive / Developmental", "Chronic Illness", "Mental Health"
+    };
+    private readonly List<string> _relationshipOptions = new()
+    {
+        "Spouse", "Partner", "Child", "Stepchild", "Grandchild", "Parent", "Grandparent", "Sibling", "Other Relative", "Non-Relative"
+    };
+    private readonly List<string> _incomeOptions = new()
+    {
+        "Wages / Salary", "Self-Employment", "Social Security", "SSI", "SSDI",
+        "Pension", "Unemployment", "Child Support", "Alimony", "Cash Assistance", "Other Income"
+    };
+    private readonly List<string> _expenseOptions = new()
+    {
+        "Rent / Mortgage", "Property Tax / Condo Fee", "Electric", "Gas / Oil / Heat",
+        "Water / Sewer", "Telephone / Internet", "Medical / Prescriptions", "Child Care", "Transportation", "Other Expense"
+    };
+
+    private bool IsGroupOrPalletClient =>
+        string.Equals(_client.ClientType, "Pallet", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(_client.ClientType, "Group Home", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsIndividualClient => !IsGroupOrPalletClient;
+
+    private bool IsFirstNameRequired => _settings.ShowRequiredFields && IsIndividualClient;
+    private bool IsDobRequired => _settings.ShowRequiredFields && IsIndividualClient;
+    private bool IsGenderRequired => _settings.ReqGender && IsIndividualClient;
+    private bool IsEthnicityRequired => _settings.ReqEthnicity && IsIndividualClient;
+    private bool IsPrimaryIncomeSourceRequired => _settings.ReqPrimaryIncomeSource && IsIndividualClient;
+
+    private string _isActiveString
+    {
+        get => (_client.IsActive ?? true) ? "True" : "False";
+        set => _client.IsActive = string.Equals(value, "True", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool _isLockedBool
+    {
+        get => _client.IsLocked ?? false;
+        set => _client.IsLocked = value;
+    }
+
+    private DateTime? _clientDobInput
+    {
+        get => _client.ClientDOB?.ToDateTime(TimeOnly.MinValue);
+        set => _client.ClientDOB = value.HasValue ? DateOnly.FromDateTime(value.Value) : null;
+    }
+
+    private DateTime? _clientVerifyDateInput
+    {
+        get => _client.ClientVerifyDate?.ToDateTime(TimeOnly.MinValue);
+        set => _client.ClientVerifyDate = value.HasValue ? DateOnly.FromDateTime(value.Value) : null;
+    }
+
+    private DateTime? _clientAddressVerifyDateInput
+    {
+        get => _client.ClientAddressVerifyDate?.ToDateTime(TimeOnly.MinValue);
+        set => _client.ClientAddressVerifyDate = value.HasValue ? DateOnly.FromDateTime(value.Value) : null;
+    }
+
+    private DateTime? _afmDobInput
+    {
+        get => _editingAfm.ClAddFamMemDOB?.ToDateTime(TimeOnly.MinValue);
+        set => _editingAfm.ClAddFamMemDOB = value.HasValue ? DateOnly.FromDateTime(value.Value) : null;
+    }
+
+    private bool _xmasBikeRaffleBool
+    {
+        get => _xmasRecord.BikeRaffle ?? false;
+        set => _xmasRecord.BikeRaffle = value;
+    }
+
+    private DateTime? _xmasBikeAwardedDateInput
+    {
+        get => _xmasRecord.BikeAwardedDate?.ToDateTime(TimeOnly.MinValue);
+        set => _xmasRecord.BikeAwardedDate = value.HasValue ? DateOnly.FromDateTime(value.Value) : null;
+    }
+
+    private DateTime? _xmasReceivedToysDateInput
+    {
+        get => _xmasRecord.ReceivedToysDate?.ToDateTime(TimeOnly.MinValue);
+        set => _xmasRecord.ReceivedToysDate = value.HasValue ? DateOnly.FromDateTime(value.Value) : null;
+    }
+
+    private DateTime? _visitDateInput
+    {
+        get => _editingVisit.VisitDate.ToDateTime(TimeOnly.MinValue);
+        set => _editingVisit.VisitDate = value.HasValue ? DateOnly.FromDateTime(value.Value) : DateOnly.FromDateTime(DateTime.Today);
+    }
+
+    private string _visitNumBagsString
+    {
+        get => (_editingVisit.VisitNumBags ?? _qualifiesForBags).ToString();
+        set => _editingVisit.VisitNumBags = int.TryParse(value, out var b) ? b : _qualifiesForBags;
+    }
+
+    private string _caseWorkerIdString
+    {
+        get => _client.LegacyCaseWorkerUserId?.ToString() ?? string.Empty;
+        set => _client.LegacyCaseWorkerUserId = int.TryParse(value, out var id) ? id : null;
+    }
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            if (PageState.Action == "Edit")
+            var settingsDict = await SettingService.GetModuleSettingsAsync(ModuleState.ModuleId);
+            _settings = FBClientsSettings.FromDictionary(settingsDict);
+
+            if (!string.IsNullOrWhiteSpace(_settings.FBState) && string.IsNullOrWhiteSpace(_client.ClientState))
             {
-                _id = Int32.Parse(PageState.QueryString["id"]);
-                FBClients FBClients = await ClientFBClientsService.GetFBClientsAsync(_id, ModuleState.ModuleId);
-                if (FBClients != null)
+                _client.ClientState = _settings.FBState;
+            }
+            else if (string.IsNullOrWhiteSpace(_client.ClientState))
+            {
+                _client.ClientState = "MA";
+            }
+
+            _canDeleteRecord = UserSecurity.IsAuthorized(PageState.User, RoleNames.Admin) ||
+                               (!string.IsNullOrWhiteSpace(_settings.ClientManagerDeleteRecordRole) &&
+                                UserSecurity.IsAuthorized(PageState.User, _settings.ClientManagerDeleteRecordRole));
+
+            await LoadCaseWorkersAsync();
+
+            if (PageState.QueryString.TryGetValue("TabFocus", out var tabFocus) && !string.IsNullOrWhiteSpace(tabFocus))
+            {
+                _activeTab = tabFocus;
+            }
+            else if (PageState.QueryString.TryGetValue("tab", out var tabParam) && !string.IsNullOrWhiteSpace(tabParam))
+            {
+                _activeTab = tabParam;
+            }
+
+            if (PageState.Action == "Edit" || PageState.QueryString.ContainsKey("id"))
+            {
+                if (PageState.QueryString.TryGetValue("id", out var idStr) && int.TryParse(idStr, out var parsedId) && parsedId > 0)
                 {
-                    _name = FBClients.Name;
-                    _createdby = FBClients.CreatedBy;
-                    _createdon = FBClients.CreatedOn;
-                    _modifiedby = FBClients.ModifiedBy;
-                    _modifiedon = FBClients.ModifiedOn;
+                    _id = parsedId;
+                    await LoadClientAndRelatedDataAsync();
                 }
             }
+            else
+            {
+                InitializeNewClientDefaults();
+            }
+
+            _initialized = true;
         }
         catch (Exception ex)
         {
@@ -73,34 +1444,407 @@
         }
     }
 
-    private async Task Save()
+    private void InitializeNewClientDefaults()
+    {
+        _client = new Models.FBClients
+        {
+            ModuleId = ModuleState.ModuleId,
+            IsActive = true,
+            IsLocked = false,
+            ClientType = "Individual",
+            ServiceLocation = _serviceLocationOptions.FirstOrDefault() ?? "Pantry",
+            ClientState = !string.IsNullOrWhiteSpace(_settings.FBState) ? _settings.FBState : "MA",
+            ClientLanguage = "en",
+            PrimaryIncomeSource = string.Empty,
+            LegacyCaseWorkerUserId = PageState.User?.UserId
+        };
+        _verificationAlerts = new List<string> { "Ready to insert a new record." };
+    }
+
+    private async Task LoadCaseWorkersAsync()
     {
         try
         {
-            validated = true;
-            var interop = new Oqtane.UI.Interop(JSRuntime);
-            if (await interop.FormValid(form))
+            if (!string.IsNullOrWhiteSpace(_settings.ClientManagerUserRole))
             {
-                if (PageState.Action == "Add")
+                var userRoles = await UserRoleService.GetUserRolesAsync(PageState.Site.SiteId, _settings.ClientManagerUserRole);
+                if (userRoles != null)
                 {
-                    FBClients FBClients = new FBClients();
-                    FBClients.ModuleId = ModuleState.ModuleId;
-                    FBClients.Name = _name;
-                    FBClients = await ClientFBClientsService.AddFBClientsAsync(FBClients);
-                    await logger.LogInformation("FBClients Added {FBClients}", FBClients);
+                    _caseWorkers = userRoles
+                        .Where(ur => ur.User != null)
+                        .Select(ur => ur.User)
+                        .GroupBy(u => u.UserId)
+                        .Select(g => g.First())
+                        .OrderBy(u => u.DisplayName)
+                        .ToList();
                 }
-                else
-                {
-                    FBClients FBClients = await ClientFBClientsService.GetFBClientsAsync(_id, ModuleState.ModuleId);
-                    FBClients.Name = _name;
-                    await ClientFBClientsService.UpdateFBClientsAsync(FBClients);
-                    await logger.LogInformation("FBClients Updated {FBClients}", FBClients);
-                }
-                NavigationManager.NavigateTo(NavigateUrl());
+            }
+            if (_caseWorkers.Count == 0 && PageState.User != null)
+            {
+                _caseWorkers.Add(PageState.User);
+            }
+        }
+        catch
+        {
+            if (PageState.User != null && _caseWorkers.Count == 0)
+            {
+                _caseWorkers.Add(PageState.User);
+            }
+        }
+    }
+
+    private async Task LoadClientAndRelatedDataAsync()
+    {
+        var loadedClient = await ClientFBClientsService.GetFBClientsAsync(_id, ModuleState.ModuleId);
+        if (loadedClient == null)
+        {
+            AddModuleMessage(Localizer["Message.LoadError"], MessageType.Error);
+            return;
+        }
+
+        _client = loadedClient;
+        if (string.IsNullOrWhiteSpace(_client.ClientType))
+        {
+            _client.ClientType = "Individual";
+        }
+        if (string.IsNullOrWhiteSpace(_client.ServiceLocation))
+        {
+            _client.ServiceLocation = _serviceLocationOptions.FirstOrDefault() ?? "Pantry";
+        }
+        if (!string.IsNullOrWhiteSpace(_client.ClientCity) && !_townOptions.Contains(_client.ClientCity, StringComparer.OrdinalIgnoreCase) && !string.Equals(_client.ClientCity, "OTHER", StringComparison.OrdinalIgnoreCase))
+        {
+            _townOptions.Add(_client.ClientCity);
+        }
+
+        _selectedDisabilities.Clear();
+        if (!string.IsNullOrWhiteSpace(_client.Disability))
+        {
+            foreach (var part in _client.Disability.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                _selectedDisabilities.Add(part);
+            }
+        }
+
+        _familyMembers = await ClientFBClientsService.GetFBClientsAddFamMemsAsync(_id, ModuleState.ModuleId) ?? new();
+        _incomeAndExpenses = await ClientFBClientsService.GetFBClientsIncomeAndExpensesAsync(_id, ModuleState.ModuleId) ?? new();
+        _visits = await ClientFBClientsService.GetFBClientsVisitsAsync(_id, ModuleState.ModuleId) ?? new();
+        _christmases = await ClientFBClientsService.GetFBClientsChristmasesAsync(_id, ModuleState.ModuleId) ?? new();
+        _tfQuestions = await ClientFBClientsService.GetFBClientsTrueFalseQuestionsAsync(_id, ModuleState.ModuleId) ?? new();
+        _idPhotos = await ClientFBClientsService.GetFBClientsIDPhotosAsync(_id, ModuleState.ModuleId) ?? new();
+
+        _tfQuestionAnswers.Clear();
+        foreach (var q in _tfQuestions)
+        {
+            _tfQuestionAnswers[q.TfQuestion] = q.TfAnswer;
+            if (!_trueFalseQuestionOptions.Contains(q.TfQuestion, StringComparer.OrdinalIgnoreCase))
+            {
+                _trueFalseQuestionOptions.Add(q.TfQuestion);
+            }
+        }
+
+        // Photo resolution (IDPhoto first, fallback to ClientPhoto)
+        var photoBytes = _idPhotos.FirstOrDefault()?.IDPhoto ?? _client.ClientPhoto;
+        _clientPhotoDataUrl = (photoBytes != null && photoBytes.Length > 0)
+            ? $"data:image/jpeg;base64,{Convert.ToBase64String(photoBytes)}"
+            : string.Empty;
+
+        RecalculateHeaderAndValidation();
+        ResetFamilyMemberForm();
+        ResetIncomeExpenseForm();
+        ResetVisitForm();
+    }
+
+    private void RecalculateHeaderAndValidation()
+    {
+        _householdTotal = 1 + _familyMembers.Count;
+        _qualifiesForBags = CalculateBagQualification();
+
+        // Visits & Stop/Go Light
+        var lastVisit = _visits.OrderByDescending(v => v.VisitDate).ThenByDescending(v => v.VisitId).FirstOrDefault();
+        int daysWindow = int.TryParse(_settings.DaysToValidVisit, out var parsedWindow) && parsedWindow > 0 ? parsedWindow : 1;
+        if (lastVisit == null)
+        {
+            _visitEligible = true;
+            _lastVisitSummary = "Last Visit: Never";
+        }
+        else
+        {
+            var daysAgo = DateOnly.FromDateTime(DateTime.Today).DayNumber - lastVisit.VisitDate.DayNumber;
+            _visitEligible = daysAgo >= daysWindow;
+            _lastVisitSummary = $"Last Visit: {lastVisit.VisitDate:MM/dd/yyyy} ({daysAgo} Days Ago)";
+        }
+
+        // Age Groups (matching fn_GIBS_FBClients_GetAgeGroup)
+        int seniors = 0, adults = 0, children = 0, noDob = 0;
+        var allDobs = new List<DateOnly?> { _client.ClientDOB };
+        allDobs.AddRange(_familyMembers.Select(m => m.ClAddFamMemDOB));
+        foreach (var dob in allDobs)
+        {
+            var age = CalculateAge(dob);
+            if (!age.HasValue || age.Value <= 0)
+            {
+                noDob++;
+            }
+            else if (age.Value <= 17)
+            {
+                children++;
+            }
+            else if (age.Value <= 64)
+            {
+                adults++;
             }
             else
             {
+                seniors++;
+            }
+        }
+        _ageGroupsSummary = $"Seniors (65+): {seniors} | Adults (18-64): {adults} | Children (0-17): {children}" +
+                            (noDob > 0 ? $" | No DOB: {noDob}" : string.Empty);
+
+        // Income & Expense totals
+        _totalMonthlyIncome = _incomeAndExpenses
+            .Where(x => string.Equals(x.IeType, "IN", StringComparison.OrdinalIgnoreCase))
+            .Sum(x => x.IeAmount ?? 0m);
+        _totalMonthlyExpenses = _incomeAndExpenses
+            .Where(x => string.Equals(x.IeType, "EX", StringComparison.OrdinalIgnoreCase))
+            .Sum(x => x.IeAmount ?? 0m);
+        _netIncomeExpense = _totalMonthlyIncome - _totalMonthlyExpenses;
+
+        // Verification warnings (matching EditClient.ascx.cs)
+        _verificationAlerts.Clear();
+        if (_id > 0)
+        {
+            var oneYearAgo = DateOnly.FromDateTime(DateTime.Today.AddDays(-365));
+            if (!_client.ClientDOBVerify)
+            {
+                _verificationAlerts.Add("Verify Client Record (see checkbox)");
+            }
+            if (!_client.ClientDOB.HasValue)
+            {
+                _verificationAlerts.Add("Missing Client Date of Birth");
+            }
+            if (!_client.ClientVerifyDate.HasValue || _client.ClientVerifyDate.Value < oneYearAgo)
+            {
+                _verificationAlerts.Add("Client Verified Date Has Expired (greater than 1 year)");
+            }
+            if (!_client.ClientAddressVerify)
+            {
+                _verificationAlerts.Add("Verify Client Address (see checkbox)");
+            }
+            if (!_client.ClientAddressVerifyDate.HasValue || _client.ClientAddressVerifyDate.Value < oneYearAgo)
+            {
+                _verificationAlerts.Add("Client Address Verified Date Has Expired (greater than 1 year)");
+            }
+            if (_familyMembers.Any(m => !m.ClAddFamMemDOB.HasValue))
+            {
+                _verificationAlerts.Add("Family Member Missing Date of Birth");
+            }
+            if (_familyMembers.Any(m => !m.AFMDOBVerify))
+            {
+                _verificationAlerts.Add("Unverified Family Member");
+            }
+            if (_settings.ReqEthnicity && _familyMembers.Any(m => string.IsNullOrWhiteSpace(m.AFMEthnicity)))
+            {
+                _verificationAlerts.Add("Missing Family Member Ethnicity");
+            }
+        }
+    }
+
+    private int CalculateBagQualification()
+    {
+        if (_client.OneBagOnly)
+        {
+            return 1;
+        }
+        if (string.Equals(_client.ClientType, "Group Home", StringComparison.OrdinalIgnoreCase))
+        {
+            return int.TryParse(_settings.GroupHomeBagAllowance, out var ghBags) && ghBags > 0 ? ghBags : 1;
+        }
+
+        int household = Math.Max(1, _householdTotal);
+        if (!string.IsNullOrWhiteSpace(_settings.BagAllowance))
+        {
+            int fallbackBags = 1;
+            foreach (var pair in _settings.BagAllowance.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var kv = pair.Split('=', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (kv.Length == 2 && int.TryParse(kv[0], out var size) && int.TryParse(kv[1], out var bags))
+                {
+                    fallbackBags = bags;
+                    if (size == household)
+                    {
+                        return bags;
+                    }
+                }
+            }
+            return fallbackBags;
+        }
+        return 1;
+    }
+
+    private string GetClientHeaderBlock()
+    {
+        var fullName = string.Join(" ", new[] { _client.ClientFirstName, _client.ClientMiddleInitial, _client.ClientLastName, _client.ClientSuffix }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
+        var unitPart = !string.IsNullOrWhiteSpace(_client.ClientUnit) ? $" {_client.ClientUnit}" : string.Empty;
+        var townOrCity = !string.IsNullOrWhiteSpace(_client.ClientTown) ? _client.ClientTown : _client.ClientCity;
+        var addressLine = $"{_client.ClientAddress}{unitPart}, {townOrCity}, {_client.ClientState} {_client.ClientZipCode}".Trim(' ', ',')
+        ;
+        var phonePrefix = (!string.IsNullOrWhiteSpace(_client.ClientPhoneType) && _client.ClientPhoneType != "0")
+            ? $"{_client.ClientPhoneType} Phone: "
+            : "Phone: ";
+        var phoneLine = !string.IsNullOrWhiteSpace(_client.ClientPhone) ? $" | {phonePrefix}{_client.ClientPhone}" : string.Empty;
+        var age = CalculateAge(_client.ClientDOB);
+        var dobLine = _client.ClientDOB.HasValue ? $" | DOB: {_client.ClientDOB:MM/dd/yyyy} (Age: {age})" : string.Empty;
+        var entryDate = _client.LegacyCreatedOnDate ?? (_client.CreatedOn != default ? _client.CreatedOn : DateTime.Today);
+        return $"{fullName} — {addressLine}{phoneLine}{dobLine} | Entry Date: {entryDate:MM/dd/yyyy}";
+    }
+
+    private static int? CalculateAge(DateOnly? dob)
+    {
+        if (!dob.HasValue)
+        {
+            return null;
+        }
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        int age = today.Year - dob.Value.Year;
+        if (today.Month < dob.Value.Month || (today.Month == dob.Value.Month && today.Day < dob.Value.Day))
+        {
+            age--;
+        }
+        return age;
+    }
+
+    private string GetLastNameLabel()
+    {
+        if (string.Equals(_client.ClientType, "Pallet", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Pallet Name:";
+        }
+        if (string.Equals(_client.ClientType, "Group Home", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Group Home Name:";
+        }
+        return Localizer["lblClientLastName.Text"];
+    }
+
+    private void OnClientTypeChanged(ChangeEventArgs e)
+    {
+        var selectedType = e.Value?.ToString() ?? "Individual";
+        _client.ClientType = selectedType;
+        if (string.Equals(selectedType, "Pallet", StringComparison.OrdinalIgnoreCase))
+        {
+            _client.ClientFirstName = "Pallet";
+            _client.ClientMiddleInitial = string.Empty;
+            _client.ClientDOB = new DateOnly(1997, 7, 7);
+        }
+        else if (string.Equals(selectedType, "Group Home", StringComparison.OrdinalIgnoreCase))
+        {
+            _client.ClientFirstName = "Group Home";
+            _client.ClientMiddleInitial = string.Empty;
+            _client.ClientDOB = new DateOnly(1997, 7, 7);
+        }
+        RecalculateHeaderAndValidation();
+    }
+
+    private void OnClientCityChanged(ChangeEventArgs e)
+    {
+        _client.ClientCity = e.Value?.ToString() ?? string.Empty;
+        _client.ClientTown = string.Empty;
+    }
+
+    private IEnumerable<string> GetVillageOptionsForCity(string city)
+    {
+        if (!string.IsNullOrWhiteSpace(city) && _villagesByTown.TryGetValue(city, out var villages))
+        {
+            return villages;
+        }
+        return !string.IsNullOrWhiteSpace(city) ? new[] { city } : Array.Empty<string>();
+    }
+
+    private void SetClientVerifiedToday()
+    {
+        _client.ClientVerifyDate = DateOnly.FromDateTime(DateTime.Today);
+        _client.ClientDOBVerify = true;
+    }
+
+    private void SetAddressVerifiedToday()
+    {
+        _client.ClientAddressVerifyDate = DateOnly.FromDateTime(DateTime.Today);
+        _client.ClientAddressVerify = true;
+    }
+
+    private bool GetTfAnswer(string question)
+    {
+        return _tfQuestionAnswers.TryGetValue(question, out var ans) && ans;
+    }
+
+    private void SetTfAnswer(string question, bool isChecked)
+    {
+        _tfQuestionAnswers[question] = isChecked;
+    }
+
+    private bool HasDisability(string disability)
+    {
+        return _selectedDisabilities.Contains(disability);
+    }
+
+    private void ToggleDisability(string disability, bool isChecked)
+    {
+        if (isChecked)
+        {
+            _selectedDisabilities.Add(disability);
+        }
+        else
+        {
+            _selectedDisabilities.Remove(disability);
+        }
+        _client.Disability = string.Join(", ", _selectedDisabilities);
+    }
+
+    private async Task SaveClient()
+    {
+        try
+        {
+            _clientValidated = true;
+            var interop = new Oqtane.UI.Interop(JSRuntime);
+            if (!await interop.FormValid(_clientForm))
+            {
                 AddModuleMessage(Localizer["Message.SaveValidation"], MessageType.Warning);
+                return;
+            }
+
+            // Normalize uppercased fields as in DNN EditClient.ascx.cs
+            _client.ClientFirstName = _client.ClientFirstName?.Trim().ToUpperInvariant();
+            _client.ClientMiddleInitial = _client.ClientMiddleInitial?.Trim().ToUpperInvariant();
+            _client.ClientLastName = _client.ClientLastName?.Trim().ToUpperInvariant();
+            _client.ClientAddress = _client.ClientAddress?.Trim().ToUpperInvariant();
+            _client.ClientUnit = _client.ClientUnit?.Trim().ToUpperInvariant();
+            _client.ClientCity = _client.ClientCity?.Trim();
+            _client.ClientTown = _client.ClientTown?.Trim();
+            _client.ClientState = _client.ClientState?.Trim().ToUpperInvariant();
+            _client.ClientZipCode = _client.ClientZipCode?.Trim();
+            _client.PrimaryIncomeSource ??= string.Empty;
+            _client.Disability = string.Join(", ", _selectedDisabilities);
+
+            if (_id <= 0)
+            {
+                _client.ModuleId = ModuleState.ModuleId;
+                _client = await ClientFBClientsService.AddFBClientsAsync(_client);
+                _id = _client.FBClientsId;
+                await SaveTrueFalseQuestionsAsync(_id);
+                await logger.LogInformation("FBClients Added {FBClientsId}", _client.FBClientsId);
+                await LoadClientAndRelatedDataAsync();
+                _activeTab = "AFM";
+                AddModuleMessage("Client record created. You may now add Household Members, Income/Expenses, and Visits.", MessageType.Success);
+            }
+            else
+            {
+                _client = await ClientFBClientsService.UpdateFBClientsAsync(_client);
+                await SaveTrueFalseQuestionsAsync(_id);
+                await logger.LogInformation("FBClients Updated {FBClientsId}", _client.FBClientsId);
+                await LoadClientAndRelatedDataAsync();
+                AddModuleMessage("Client record updated successfully.", MessageType.Success);
             }
         }
         catch (Exception ex)
@@ -108,5 +1852,573 @@
             await logger.LogError(ex, "Error Saving FBClients {Error}", ex.Message);
             AddModuleMessage(Localizer["Message.SaveError"], MessageType.Error);
         }
+    }
+
+    private async Task SaveTrueFalseQuestionsAsync(int clientId)
+    {
+        foreach (var q in _trueFalseQuestionOptions)
+        {
+            var answer = GetTfAnswer(q);
+            if (answer || _tfQuestions.Any(x => string.Equals(x.TfQuestion, q, StringComparison.OrdinalIgnoreCase)))
+            {
+                await ClientFBClientsService.SaveFBClientsTrueFalseQuestionAsync(new FBClientsTrueFalseQuestions
+                {
+                    FBClientsId = clientId,
+                    TfQuestion = q,
+                    TfAnswer = answer
+                }, ModuleState.ModuleId);
+            }
+        }
+    }
+
+    private async Task DeleteClient()
+    {
+        try
+        {
+            if (_id > 0 && _canDeleteRecord)
+            {
+                await ClientFBClientsService.DeleteFBClientsAsync(_id, ModuleState.ModuleId);
+                await logger.LogInformation("FBClients Deleted {FBClientsId}", _id);
+                NavigationManager.NavigateTo(NavigateUrl());
+            }
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Deleting FBClients {FBClientsId} {Error}", _id, ex.Message);
+            AddModuleMessage(Localizer["Message.SaveError"], MessageType.Error);
+        }
+    }
+
+    // Household Members (AFM)
+    private void ResetFamilyMemberForm()
+    {
+        _afmValidated = false;
+        _editingAfm = new FBClientsAddFamMem
+        {
+            FBClientsId = _id,
+            ClAddFamMemLastName = _client.ClientLastName
+        };
+    }
+
+    private void EditFamilyMember(FBClientsAddFamMem afm)
+    {
+        _editingAfm = new FBClientsAddFamMem
+        {
+            FBClientsAddFamMemId = afm.FBClientsAddFamMemId,
+            FBClientsId = afm.FBClientsId,
+            LegacyClAddFamMemId = afm.LegacyClAddFamMemId,
+            ClAddFamMemFirstName = afm.ClAddFamMemFirstName,
+            AFMMiddleInitial = afm.AFMMiddleInitial,
+            ClAddFamMemLastName = afm.ClAddFamMemLastName,
+            AFMSuffix = afm.AFMSuffix,
+            ClAddFamMemDOB = afm.ClAddFamMemDOB,
+            AFMDOBVerify = afm.AFMDOBVerify,
+            AFMRelationship = afm.AFMRelationship,
+            AFMGender = afm.AFMGender,
+            AFMEthnicity = afm.AFMEthnicity,
+            CreatedBy = afm.CreatedBy,
+            CreatedOn = afm.CreatedOn,
+            ModifiedBy = afm.ModifiedBy,
+            ModifiedOn = afm.ModifiedOn
+        };
+    }
+
+    private async Task SaveFamilyMember()
+    {
+        try
+        {
+            _afmValidated = true;
+            var interop = new Oqtane.UI.Interop(JSRuntime);
+            if (!await interop.FormValid(_afmForm))
+            {
+                AddModuleMessage(Localizer["Message.SaveValidation"], MessageType.Warning);
+                return;
+            }
+
+            _editingAfm.FBClientsId = _id;
+            _editingAfm.ClAddFamMemFirstName = _editingAfm.ClAddFamMemFirstName?.Trim().ToUpperInvariant();
+            _editingAfm.AFMMiddleInitial = _editingAfm.AFMMiddleInitial?.Trim().ToUpperInvariant();
+            _editingAfm.ClAddFamMemLastName = _editingAfm.ClAddFamMemLastName?.Trim().ToUpperInvariant();
+
+            if (_editingAfm.FBClientsAddFamMemId == 0)
+            {
+                await ClientFBClientsService.AddFBClientsAddFamMemAsync(_editingAfm, ModuleState.ModuleId);
+            }
+            else
+            {
+                await ClientFBClientsService.UpdateFBClientsAddFamMemAsync(_editingAfm, ModuleState.ModuleId);
+            }
+
+            _familyMembers = await ClientFBClientsService.GetFBClientsAddFamMemsAsync(_id, ModuleState.ModuleId) ?? new();
+            RecalculateHeaderAndValidation();
+            ResetFamilyMemberForm();
+            AddModuleMessage("Household member saved.", MessageType.Success);
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Saving Family Member {Error}", ex.Message);
+            AddModuleMessage("Error saving household member.", MessageType.Error);
+        }
+    }
+
+    private async Task DeleteFamilyMember(int afmId)
+    {
+        try
+        {
+            await ClientFBClientsService.DeleteFBClientsAddFamMemAsync(afmId, ModuleState.ModuleId);
+            _familyMembers = await ClientFBClientsService.GetFBClientsAddFamMemsAsync(_id, ModuleState.ModuleId) ?? new();
+            _christmases = await ClientFBClientsService.GetFBClientsChristmasesAsync(_id, ModuleState.ModuleId) ?? new();
+            if (_selectedXmasAfm?.FBClientsAddFamMemId == afmId)
+            {
+                CloseChristmasForm();
+            }
+            RecalculateHeaderAndValidation();
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Deleting Family Member {FBClientsAddFamMemId} {Error}", afmId, ex.Message);
+            AddModuleMessage("Error deleting household member.", MessageType.Error);
+        }
+    }
+
+    // Christmas Toys
+    private int GetConfiguredXmasYear()
+    {
+        return int.TryParse(_settings.XmasToysYear, out var yr) && yr > 2000 ? yr : DateTime.Today.Year;
+    }
+
+    private bool HasCurrentYearToys(int afmId)
+    {
+        int yr = GetConfiguredXmasYear();
+        return _christmases.Any(x => x.FBClientsAddFamMemId == afmId && x.xMasYear == yr && x.VerifiedToys == true);
+    }
+
+    private bool IsChildAgeInXmasSizeRange(DateOnly? dob)
+    {
+        var age = CalculateAge(dob);
+        if (!age.HasValue)
+        {
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(_settings.XmasRequireSizeAgeRange))
+        {
+            return true;
+        }
+        var allowedAges = _settings.XmasRequireSizeAgeRange
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s, out var a) ? a : -1)
+            .ToHashSet();
+        return allowedAges.Contains(age.Value);
+    }
+
+    private void OpenChristmasForm(FBClientsAddFamMem afm)
+    {
+        _selectedXmasAfm = afm;
+        int currentYear = GetConfiguredXmasYear();
+        _afmChristmasHistory = _christmases
+            .Where(x => x.FBClientsAddFamMemId == afm.FBClientsAddFamMemId)
+            .OrderByDescending(x => x.xMasYear)
+            .ToList();
+
+        var existingCurrentYear = _afmChristmasHistory.FirstOrDefault(x => x.xMasYear == currentYear);
+        if (existingCurrentYear != null)
+        {
+            _xmasRecord = new FBClientsChristmas
+            {
+                xMasId = existingCurrentYear.xMasId,
+                FBClientsId = existingCurrentYear.FBClientsId,
+                FBClientsAddFamMemId = existingCurrentYear.FBClientsAddFamMemId,
+                xMasYear = existingCurrentYear.xMasYear,
+                Sizes = existingCurrentYear.Sizes,
+                BikeRaffle = existingCurrentYear.BikeRaffle,
+                BikeAwardedDate = existingCurrentYear.BikeAwardedDate,
+                WantsToys = existingCurrentYear.WantsToys,
+                VerifiedToys = existingCurrentYear.VerifiedToys,
+                ReceivedToysDate = existingCurrentYear.ReceivedToysDate,
+                XmasNotes = existingCurrentYear.XmasNotes,
+                XmasGift1 = existingCurrentYear.XmasGift1,
+                XmasGift2 = existingCurrentYear.XmasGift2,
+                XmasGift1Size = existingCurrentYear.XmasGift1Size,
+                XmasGift2Size = existingCurrentYear.XmasGift2Size,
+                XmasGiftRecordID = existingCurrentYear.XmasGiftRecordID,
+                CreatedBy = existingCurrentYear.CreatedBy,
+                CreatedOn = existingCurrentYear.CreatedOn,
+                ModifiedBy = existingCurrentYear.ModifiedBy,
+                ModifiedOn = existingCurrentYear.ModifiedOn
+            };
+        }
+        else
+        {
+            _xmasRecord = new FBClientsChristmas
+            {
+                FBClientsId = _id,
+                FBClientsAddFamMemId = afm.FBClientsAddFamMemId,
+                xMasYear = currentYear,
+                WantsToys = true,
+                VerifiedToys = true
+            };
+        }
+
+        // Bike raffle eligibility check (age >= 9 and no bike won in past 5 years)
+        var age = CalculateAge(afm.ClAddFamMemDOB) ?? 0;
+        var recentBikeWin = _afmChristmasHistory.FirstOrDefault(x =>
+            x.BikeAwardedDate.HasValue &&
+            x.BikeAwardedDate.Value.Year >= currentYear - 5 &&
+            x.xMasYear != currentYear);
+
+        if (age < 9)
+        {
+            _xmasBikeRaffleDisabled = true;
+            _xmasRecord.BikeRaffle = false;
+            _xmasBikeNote = "Child must be at least 9 years old to enter the Bike Raffle.";
+        }
+        else if (recentBikeWin != null)
+        {
+            _xmasBikeRaffleDisabled = true;
+            _xmasRecord.BikeRaffle = false;
+            _xmasBikeNote = $"Bike was already awarded on {recentBikeWin.BikeAwardedDate:MM/dd/yyyy}.";
+        }
+        else
+        {
+            _xmasBikeRaffleDisabled = false;
+            _xmasBikeNote = string.Empty;
+        }
+
+        _showChristmasForm = true;
+    }
+
+    private void CloseChristmasForm()
+    {
+        _showChristmasForm = false;
+        _selectedXmasAfm = null;
+        _xmasRecord = new();
+        _afmChristmasHistory.Clear();
+    }
+
+    private async Task SaveChristmasRecord()
+    {
+        try
+        {
+            _xmasRecord.FBClientsId = _id;
+            _xmasRecord.FBClientsAddFamMemId = _selectedXmasAfm?.FBClientsAddFamMemId;
+            _xmasRecord.WantsToys = true;
+            _xmasRecord.VerifiedToys = true;
+
+            if (_xmasRecord.xMasId == 0)
+            {
+                await ClientFBClientsService.AddFBClientsChristmasAsync(_xmasRecord, ModuleState.ModuleId);
+            }
+            else
+            {
+                await ClientFBClientsService.UpdateFBClientsChristmasAsync(_xmasRecord, ModuleState.ModuleId);
+            }
+
+            _christmases = await ClientFBClientsService.GetFBClientsChristmasesAsync(_id, ModuleState.ModuleId) ?? new();
+            CloseChristmasForm();
+            AddModuleMessage("Christmas Toys record saved.", MessageType.Success);
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Saving Christmas Record {Error}", ex.Message);
+            AddModuleMessage("Error saving Christmas record.", MessageType.Error);
+        }
+    }
+
+    private async Task DeleteChristmasRecord(int xMasId)
+    {
+        try
+        {
+            await ClientFBClientsService.DeleteFBClientsChristmasAsync(xMasId, ModuleState.ModuleId);
+            _christmases = await ClientFBClientsService.GetFBClientsChristmasesAsync(_id, ModuleState.ModuleId) ?? new();
+            CloseChristmasForm();
+            AddModuleMessage("Christmas record deleted.", MessageType.Success);
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Deleting Christmas Record {xMasId} {Error}", xMasId, ex.Message);
+            AddModuleMessage("Error deleting Christmas record.", MessageType.Error);
+        }
+    }
+
+    // Income & Expense
+    private void ResetIncomeExpenseForm()
+    {
+        _editingIeId = 0;
+        _incomeSource = string.Empty;
+        _incomeAmountInput = null;
+        _expenseSource = string.Empty;
+        _expenseAmountInput = null;
+    }
+
+    private void EditIncomeOrExpense(FBClientsIncomeAndExpense item)
+    {
+        ResetIncomeExpenseForm();
+        _editingIeId = item.IeId;
+        if (string.Equals(item.IeType, "IN", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!_incomeOptions.Contains(item.IeDescription, StringComparer.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(item.IeDescription))
+            {
+                _incomeOptions.Add(item.IeDescription);
+            }
+            _incomeSource = item.IeDescription ?? string.Empty;
+            _incomeAmountInput = item.IeAmount;
+        }
+        else
+        {
+            if (!_expenseOptions.Contains(item.IeDescription, StringComparer.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(item.IeDescription))
+            {
+                _expenseOptions.Add(item.IeDescription);
+            }
+            _expenseSource = item.IeDescription ?? string.Empty;
+            _expenseAmountInput = item.IeAmount;
+        }
+    }
+
+    private async Task SaveIncomeExpense()
+    {
+        try
+        {
+            bool savedAny = false;
+            if (!string.IsNullOrWhiteSpace(_incomeSource) && _incomeAmountInput.HasValue)
+            {
+                var incRecord = new FBClientsIncomeAndExpense
+                {
+                    IeId = _editingIeId,
+                    FBClientsId = _id,
+                    IeType = "IN",
+                    IeDescription = _incomeSource,
+                    IeAmount = _incomeAmountInput.Value
+                };
+                if (_editingIeId > 0)
+                {
+                    await ClientFBClientsService.UpdateFBClientsIncomeAndExpenseAsync(incRecord, ModuleState.ModuleId);
+                }
+                else
+                {
+                    await ClientFBClientsService.AddFBClientsIncomeAndExpenseAsync(incRecord, ModuleState.ModuleId);
+                }
+                savedAny = true;
+            }
+
+            if (_settings.ShowExpense && !string.IsNullOrWhiteSpace(_expenseSource) && _expenseAmountInput.HasValue)
+            {
+                var expRecord = new FBClientsIncomeAndExpense
+                {
+                    IeId = _editingIeId,
+                    FBClientsId = _id,
+                    IeType = "EX",
+                    IeDescription = _expenseSource,
+                    IeAmount = _expenseAmountInput.Value
+                };
+                if (_editingIeId > 0)
+                {
+                    await ClientFBClientsService.UpdateFBClientsIncomeAndExpenseAsync(expRecord, ModuleState.ModuleId);
+                }
+                else
+                {
+                    await ClientFBClientsService.AddFBClientsIncomeAndExpenseAsync(expRecord, ModuleState.ModuleId);
+                }
+                savedAny = true;
+            }
+
+            if (!savedAny)
+            {
+                AddModuleMessage("Please select a source and enter an amount.", MessageType.Warning);
+                return;
+            }
+
+            _incomeAndExpenses = await ClientFBClientsService.GetFBClientsIncomeAndExpensesAsync(_id, ModuleState.ModuleId) ?? new();
+            RecalculateHeaderAndValidation();
+            ResetIncomeExpenseForm();
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Saving Income/Expense {Error}", ex.Message);
+            AddModuleMessage("Error saving income/expense item.", MessageType.Error);
+        }
+    }
+
+    private async Task DeleteIncomeOrExpense(int ieId)
+    {
+        try
+        {
+            await ClientFBClientsService.DeleteFBClientsIncomeAndExpenseAsync(ieId, ModuleState.ModuleId);
+            _incomeAndExpenses = await ClientFBClientsService.GetFBClientsIncomeAndExpensesAsync(_id, ModuleState.ModuleId) ?? new();
+            RecalculateHeaderAndValidation();
+            ResetIncomeExpenseForm();
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Deleting Income/Expense {IeId} {Error}", ieId, ex.Message);
+            AddModuleMessage("Error deleting income/expense item.", MessageType.Error);
+        }
+    }
+
+    // Map
+    private string GetGoogleMapEmbedUrl()
+    {
+        if (_client.Latitude.HasValue && _client.Longitude.HasValue && (_client.Latitude.Value != 0 || _client.Longitude.Value != 0))
+        {
+            var lat = _client.Latitude.Value.ToString(CultureInfo.InvariantCulture);
+            var lng = _client.Longitude.Value.ToString(CultureInfo.InvariantCulture);
+            return $"https://maps.google.com/maps?q={lat},{lng}&z=15&output=embed";
+        }
+        if (!string.IsNullOrWhiteSpace(_client.ClientAddress))
+        {
+            var query = Uri.EscapeDataString($"{_client.ClientAddress}, {_client.ClientCity}, {_client.ClientState} {_client.ClientZipCode}");
+            return $"https://maps.google.com/maps?q={query}&z=15&output=embed";
+        }
+        return string.Empty;
+    }
+
+    private async Task SaveMapCoordinates()
+    {
+        try
+        {
+            _client = await ClientFBClientsService.UpdateFBClientsAsync(_client);
+            AddModuleMessage("Map coordinates saved.", MessageType.Success);
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Saving Map Coordinates {Error}", ex.Message);
+            AddModuleMessage("Error saving map coordinates.", MessageType.Error);
+        }
+    }
+
+    // Visits
+    private void ResetVisitForm()
+    {
+        _editingVisit = new FBClientsVisits
+        {
+            FBClientsId = _id,
+            VisitDate = DateOnly.FromDateTime(DateTime.Today),
+            VisitNumBags = _qualifiesForBags,
+            ServiceLocation = !string.IsNullOrWhiteSpace(_client.ServiceLocation)
+                ? _client.ServiceLocation
+                : (_serviceLocationOptions.FirstOrDefault() ?? "Pantry"),
+            OrderStatusCode = 0
+        };
+        _repeatInsertCount = 1;
+    }
+
+    private void EditVisit(FBClientsVisits visit)
+    {
+        _editingVisit = new FBClientsVisits
+        {
+            VisitId = visit.VisitId,
+            FBClientsId = visit.FBClientsId,
+            LegacyVisitId = visit.LegacyVisitId,
+            VisitDate = visit.VisitDate,
+            VisitNotes = visit.VisitNotes,
+            VisitNumBags = visit.VisitNumBags,
+            ServiceLocation = visit.ServiceLocation,
+            ClientSignature = visit.ClientSignature,
+            OrderStatusCode = visit.OrderStatusCode,
+            CreatedBy = visit.CreatedBy,
+            CreatedOn = visit.CreatedOn,
+            ModifiedBy = visit.ModifiedBy,
+            ModifiedOn = visit.ModifiedOn
+        };
+    }
+
+    private async Task SaveVisit()
+    {
+        try
+        {
+            if (_client.IsLocked == true)
+            {
+                AddModuleMessage("THIS ACCOUNT IS LOCKED - YOU CANNOT ADD A VISIT!", MessageType.Error);
+                return;
+            }
+
+            _editingVisit.FBClientsId = _id;
+            _editingVisit.ServiceLocation ??= "Pantry";
+
+            if (_editingVisit.VisitId > 0)
+            {
+                await ClientFBClientsService.UpdateFBClientsVisitAsync(_editingVisit, ModuleState.ModuleId);
+            }
+            else
+            {
+                int count = (string.Equals(_client.ClientType, "Pallet", StringComparison.OrdinalIgnoreCase) && _repeatInsertCount > 1)
+                    ? _repeatInsertCount
+                    : 1;
+                for (int i = 0; i < count; i++)
+                {
+                    await ClientFBClientsService.AddFBClientsVisitAsync(new FBClientsVisits
+                    {
+                        FBClientsId = _id,
+                        VisitDate = _editingVisit.VisitDate,
+                        VisitNumBags = _editingVisit.VisitNumBags,
+                        VisitNotes = _editingVisit.VisitNotes,
+                        ServiceLocation = _editingVisit.ServiceLocation,
+                        OrderStatusCode = _editingVisit.OrderStatusCode ?? 0
+                    }, ModuleState.ModuleId);
+                }
+            }
+
+            _visits = await ClientFBClientsService.GetFBClientsVisitsAsync(_id, ModuleState.ModuleId) ?? new();
+            RecalculateHeaderAndValidation();
+            ResetVisitForm();
+            AddModuleMessage("Visit saved.", MessageType.Success);
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Saving Visit {Error}", ex.Message);
+            AddModuleMessage("Error saving visit.", MessageType.Error);
+        }
+    }
+
+    private async Task DeleteVisit(int visitId)
+    {
+        try
+        {
+            if (_canDeleteRecord)
+            {
+                await ClientFBClientsService.DeleteFBClientsVisitAsync(visitId, ModuleState.ModuleId);
+                _visits = await ClientFBClientsService.GetFBClientsVisitsAsync(_id, ModuleState.ModuleId) ?? new();
+                RecalculateHeaderAndValidation();
+                ResetVisitForm();
+            }
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Deleting Visit {VisitId} {Error}", visitId, ex.Message);
+            AddModuleMessage("Error deleting visit.", MessageType.Error);
+        }
+    }
+
+    private static string GetOrderStatusLabel(int? code) => (code ?? 0) switch
+    {
+        1 => "Link Sent",
+        2 => "Order Submitted",
+        3 => "Processing",
+        4 => "Filled",
+        _ => "Standard Visit"
+    };
+
+    private async Task PrintShoppingLabel()
+    {
+        await JSRuntime.InvokeVoidAsync("window.print");
+    }
+
+    private async Task PrintBarcodeLabel()
+    {
+        await JSRuntime.InvokeVoidAsync("window.print");
+    }
+
+    private string GetReturnToSearchUrl()
+    {
+        var queryParts = new List<string>();
+        foreach (var key in new[] { "cidcard", "fname", "lname", "address", "clientid", "inactive" })
+        {
+            if (PageState.QueryString.TryGetValue(key, out var val) && !string.IsNullOrWhiteSpace(val))
+            {
+                queryParts.Add($"{key}={Uri.EscapeDataString(val)}");
+            }
+        }
+        return queryParts.Count > 0
+            ? NavigateUrl(PageState.Page.Path, string.Join("&", queryParts))
+            : NavigateUrl();
     }
 }

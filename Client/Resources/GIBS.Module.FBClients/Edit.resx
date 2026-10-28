@@ -117,14 +117,284 @@
   <resheader name="writer">
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
-  <data name="Name.Text" xml:space="preserve">
-    <value>Name: </value>
+  <data name="TabClient.Heading" xml:space="preserve">
+    <value>Client</value>
   </data>
-  <data name="Name.HelpText" xml:space="preserve">
-    <value>Enter the name</value>
+  <data name="TabAFM.Heading" xml:space="preserve">
+    <value>Household Members</value>
+  </data>
+  <data name="TabIncomeExpense.Heading" xml:space="preserve">
+    <value>Income &amp; Expense</value>
+  </data>
+  <data name="TabIncome.Heading" xml:space="preserve">
+    <value>Income</value>
+  </data>
+  <data name="TabMap.Heading" xml:space="preserve">
+    <value>Map</value>
+  </data>
+  <data name="TabVisits.Heading" xml:space="preserve">
+    <value>Client Visits</value>
+  </data>
+  <data name="SectionDemographics.Heading" xml:space="preserve">
+    <value>Client Name &amp; Demographics</value>
+  </data>
+  <data name="SectionAddress.Heading" xml:space="preserve">
+    <value>Address, E-Mail &amp; Phone</value>
+  </data>
+  <data name="SectionOther.Heading" xml:space="preserve">
+    <value>Other</value>
+  </data>
+  <data name="SectionAFMForm.Heading" xml:space="preserve">
+    <value>Additional Family Member</value>
+  </data>
+  <data name="SectionGuidelines.Heading" xml:space="preserve">
+    <value>Click Here for Income Eligibility Guidelines</value>
+  </data>
+  <data name="lblIsActive.Text" xml:space="preserve">
+    <value>Status:</value>
+  </data>
+  <data name="lblIsActive.Help" xml:space="preserve">
+    <value>Set Client Active or Inactive</value>
+  </data>
+  <data name="lblClientType.Text" xml:space="preserve">
+    <value>Client Type:</value>
+  </data>
+  <data name="lblClientType.Help" xml:space="preserve">
+    <value>Select the Client Type</value>
+  </data>
+  <data name="lblClientServiceLocation.Text" xml:space="preserve">
+    <value>Client Origination:</value>
+  </data>
+  <data name="lblClientServiceLocation.Help" xml:space="preserve">
+    <value>Where the client originated</value>
+  </data>
+  <data name="lblClientFirstName.Text" xml:space="preserve">
+    <value>First Name:</value>
+  </data>
+  <data name="lblClientFirstName.Help" xml:space="preserve">
+    <value>Enter Client First Name</value>
+  </data>
+  <data name="lblClientMiddleInitial.Text" xml:space="preserve">
+    <value>Middle Name:</value>
+  </data>
+  <data name="lblClientMiddleInitial.Help" xml:space="preserve">
+    <value>Enter Client Middle Name or Initial</value>
+  </data>
+  <data name="lblClientLastName.Text" xml:space="preserve">
+    <value>Last Name:</value>
+  </data>
+  <data name="lblClientLastName.Help" xml:space="preserve">
+    <value>Enter Client Last Name</value>
+  </data>
+  <data name="lblClientSuffix.Text" xml:space="preserve">
+    <value>Suffix:</value>
+  </data>
+  <data name="lblClientSuffix.Help" xml:space="preserve">
+    <value>Select Client Suffix</value>
+  </data>
+  <data name="lblClientDOB.Text" xml:space="preserve">
+    <value>Birth Date:</value>
+  </data>
+  <data name="lblClientDOB.Help" xml:space="preserve">
+    <value>Enter Client Birth Date</value>
+  </data>
+  <data name="lblClientGender.Text" xml:space="preserve">
+    <value>Gender:</value>
+  </data>
+  <data name="lblClientGender.Help" xml:space="preserve">
+    <value>Select Client Gender</value>
+  </data>
+  <data name="lblEthnicity.Text" xml:space="preserve">
+    <value>Ethnicity:</value>
+  </data>
+  <data name="lblEthnicity.Help" xml:space="preserve">
+    <value>Select Client Ethnicity</value>
+  </data>
+  <data name="lblClientLanguage.Text" xml:space="preserve">
+    <value>Preferred Language:</value>
+  </data>
+  <data name="lblClientLanguage.Help" xml:space="preserve">
+    <value>Select Preferred Language</value>
+  </data>
+  <data name="lblVerifyDate.Text" xml:space="preserve">
+    <value>Client Verified Date:</value>
+  </data>
+  <data name="lblVerifyDate.Help" xml:space="preserve">
+    <value>Date Client Identity &amp; DOB were verified</value>
+  </data>
+  <data name="lblClientDOBVerify.Text" xml:space="preserve">
+    <value>Client Verified</value>
+  </data>
+  <data name="lblClientAddress.Text" xml:space="preserve">
+    <value>Address:</value>
+  </data>
+  <data name="lblClientAddress.Help" xml:space="preserve">
+    <value>Street Number and Street Name ONLY! Use the Apt./Unit input below for apartments, units, suites, room #'s, etc.</value>
+  </data>
+  <data name="lblClientUnit.Text" xml:space="preserve">
+    <value>Apt./Unit:</value>
+  </data>
+  <data name="lblClientUnit.Help" xml:space="preserve">
+    <value>Apartment, Unit, Suite or Room Number</value>
+  </data>
+  <data name="lblClientCity.Text" xml:space="preserve">
+    <value>Town:</value>
+  </data>
+  <data name="lblClientCity.Help" xml:space="preserve">
+    <value>Select Town</value>
+  </data>
+  <data name="lblClientTown.Text" xml:space="preserve">
+    <value>Village:</value>
+  </data>
+  <data name="lblClientTown.Help" xml:space="preserve">
+    <value>Select Village</value>
+  </data>
+  <data name="lblClientState.Text" xml:space="preserve">
+    <value>State:</value>
+  </data>
+  <data name="lblClientState.Help" xml:space="preserve">
+    <value>Select State</value>
+  </data>
+  <data name="lblClientZipCode.Text" xml:space="preserve">
+    <value>Zip Code:</value>
+  </data>
+  <data name="lblClientZipCode.Help" xml:space="preserve">
+    <value>Enter 5-digit or 9-digit Zip Code</value>
+  </data>
+  <data name="lblClientAddressVerify.Text" xml:space="preserve">
+    <value>Address Verified:</value>
+  </data>
+  <data name="lblClientAddressVerify.Help" xml:space="preserve">
+    <value>Date Client Address was verified</value>
+  </data>
+  <data name="lblOneBagOnly.Text" xml:space="preserve">
+    <value>One Bag Client:</value>
+  </data>
+  <data name="lblOneBagOnly.Help" xml:space="preserve">
+    <value>Restrict client to 1 bag regardless of household size</value>
+  </data>
+  <data name="lblClientEmailAddress.Text" xml:space="preserve">
+    <value>E-Mail Address:</value>
+  </data>
+  <data name="lblClientEmailAddress.Help" xml:space="preserve">
+    <value>Enter Client E-Mail Address</value>
+  </data>
+  <data name="lblClientPhone.Text" xml:space="preserve">
+    <value>Phone Number:</value>
+  </data>
+  <data name="lblClientPhone.Help" xml:space="preserve">
+    <value>Enter Client Phone Number</value>
+  </data>
+  <data name="lblPrimaryIncomeSource.Text" xml:space="preserve">
+    <value>Primary Income Source:</value>
+  </data>
+  <data name="lblPrimaryIncomeSource.Help" xml:space="preserve">
+    <value>Select Primary Income Source</value>
+  </data>
+  <data name="lblTrueFalseQuestions.Text" xml:space="preserve">
+    <value>Check All That Apply:</value>
+  </data>
+  <data name="lblTrueFalseQuestions.Help" xml:space="preserve">
+    <value>Select all program questions that apply to this client</value>
+  </data>
+  <data name="lblCaseWorker.Text" xml:space="preserve">
+    <value>Interviewer:</value>
+  </data>
+  <data name="lblCaseWorker.Help" xml:space="preserve">
+    <value>Select Interviewer / CaseWorker</value>
+  </data>
+  <data name="lblDisability.Text" xml:space="preserve">
+    <value>Disabilities:</value>
+  </data>
+  <data name="lblDisability.Help" xml:space="preserve">
+    <value>Select all disabilities that apply</value>
+  </data>
+  <data name="lblSubjectToReview.Text" xml:space="preserve">
+    <value>Subject to Review:</value>
+  </data>
+  <data name="lblSubjectToReview.Help" xml:space="preserve">
+    <value>Flag this client record for supervisor review</value>
+  </data>
+  <data name="lblClientNote.Text" xml:space="preserve">
+    <value>Client Note:</value>
+  </data>
+  <data name="lblClientNote.Help" xml:space="preserve">
+    <value>Notes regarding this client</value>
+  </data>
+  <data name="lblClientIdCard.Text" xml:space="preserve">
+    <value>Client ID Card:</value>
+  </data>
+  <data name="lblClientIdCard.Help" xml:space="preserve">
+    <value>Client ID Card Number</value>
+  </data>
+  <data name="lblIsLocked.Text" xml:space="preserve">
+    <value>Locked Account:</value>
+  </data>
+  <data name="lblIsLocked.Help" xml:space="preserve">
+    <value>When checked, visits cannot be added for this client</value>
+  </data>
+  <data name="lblClAddFamMemFirstName.Text" xml:space="preserve">
+    <value>First Name:</value>
+  </data>
+  <data name="lblAFMMiddleInitial.Text" xml:space="preserve">
+    <value>Middle Name/Initial:</value>
+  </data>
+  <data name="lblClAddFamMemLastName.Text" xml:space="preserve">
+    <value>Last Name:</value>
+  </data>
+  <data name="lblAFMSuffix.Text" xml:space="preserve">
+    <value>Suffix:</value>
+  </data>
+  <data name="lblClAddFamMemDOB.Text" xml:space="preserve">
+    <value>Birth Date:</value>
+  </data>
+  <data name="lblAFMRelationship.Text" xml:space="preserve">
+    <value>Relationship to Client:</value>
+  </data>
+  <data name="lblAFMGender.Text" xml:space="preserve">
+    <value>Gender:</value>
+  </data>
+  <data name="lblAFMEthnicity.Text" xml:space="preserve">
+    <value>Ethnicity:</value>
+  </data>
+  <data name="lblClientIncome.Text" xml:space="preserve">
+    <value>Monthly Income:</value>
+  </data>
+  <data name="lblClientExpense.Text" xml:space="preserve">
+    <value>Monthly Expense:</value>
+  </data>
+  <data name="lblIeAmount.Text" xml:space="preserve">
+    <value>Amount:</value>
+  </data>
+  <data name="lblLatitude.Text" xml:space="preserve">
+    <value>Latitude:</value>
+  </data>
+  <data name="lblLongitude.Text" xml:space="preserve">
+    <value>Longitude:</value>
+  </data>
+  <data name="lblVisitServiceLocation.Text" xml:space="preserve">
+    <value>Service Location:</value>
+  </data>
+  <data name="lblVisitDate.Text" xml:space="preserve">
+    <value>Visit Date:</value>
+  </data>
+  <data name="lblVisitNumBags.Text" xml:space="preserve">
+    <value>Number of Bags:</value>
+  </data>
+  <data name="lblRepeatInsert.Text" xml:space="preserve">
+    <value>Repeat Insert (x) Times:</value>
+  </data>
+  <data name="lblVisitNotes.Text" xml:space="preserve">
+    <value>Notes:</value>
   </data>
   <data name="Save" xml:space="preserve">
     <value>Save</value>
+  </data>
+  <data name="Delete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Merge" xml:space="preserve">
+    <value>Merge</value>
   </data>
   <data name="Cancel" xml:space="preserve">
     <value>Cancel</value>

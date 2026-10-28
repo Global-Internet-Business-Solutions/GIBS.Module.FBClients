@@ -1,0 +1,261 @@
+@using GIBS.Module.FBClients.Services
+@using GIBS.Module.FBClients.Models
+
+@namespace GIBS.Module.FBClients
+@inherits ModuleBase
+@implements IAsyncDisposable
+@inject IFBClientsService ClientFBClientsService
+@inject ISettingService SettingService
+@inject NavigationManager NavigationManager
+@inject IStringLocalizer<Camera> Localizer
+
+@if (!_initialized)
+{
+    <p><em>Loading...</em></p>
+}
+else if (_client != null)
+{
+    <div class="camera-button-group">
+        <button id="btn-capture" type="button" class="btn btn-primary camera-button" @onclick="CaptureImageAsync">
+            @Localizer["CaptureImage"]
+        </button>
+
+        <span id="LabelClientInfo" class="fw-semibold me-3">@_clientInfoText</span>
+
+        @if (_hasCurrentPhoto)
+        {
+            <a id="HyperLinkMakeID" class="btn btn-success" href="@EditUrl("MakeID", $"id={_clientId}")">
+                @Localizer["MakeIDCard"]
+            </a>
+        }
+    </div>
+
+    <div class="camera-play-area">
+        <div class="camera-play-area-sub">
+            <video class="camera-hidden" id="player" autoplay="autoplay" playsinline width="620" height="460"></video>
+            <h3>@Localizer["CameraHeading"]</h3>
+        </div>
+        <div class="camera-play-area-sub">
+            <canvas id="capture" width="620" height="460"></canvas>
+            @if (!string.IsNullOrEmpty(_capturedImageDataUrl))
+            {
+                <div class="text-center mb-2">
+                    <button id="ButtonSaveImage" type="button" class="btn btn-success camera-button" @onclick="SaveImageAsync">
+                        @Localizer["Save"]
+                    </button>
+                </div>
+            }
+            <div id="snapshot">
+                @if (string.IsNullOrEmpty(_capturedImageDataUrl))
+                {
+                    <span>@Localizer["ClickCapturePrompt"]</span>
+                }
+                else
+                {
+                    <p class="text-center mb-2">@Localizer["ImageCreatedPrompt"]</p>
+                    <img src="@_capturedImageDataUrl" width="620" height="460" alt="@($"{_client.ClientFirstName} {_client.ClientLastName}")" class="img-fluid border rounded" />
+                }
+            </div>
+            <h3>@Localizer["CaptureHeading"]</h3>
+        </div>
+    </div>
+
+    <div class="camera-msg error camera-hidden" id="https">
+        The Media Device Functionality is only available over https!
+    </div>
+    <div class="camera-msg error camera-hidden" id="no-support">
+        Your navigator doesn't support the Media Device functionality!
+    </div>
+    <div class="camera-msg error camera-hidden" id="no-device">
+        No media device found!
+    </div>
+
+    <div class="camera-play-area">
+        <span class="fw-semibold me-2">@Localizer["CurrentImage"]</span>
+        @if (_hasCurrentPhoto && !string.IsNullOrEmpty(_currentPhotoDataUrl))
+        {
+            <img id="ImageIDClient" src="@_currentPhotoDataUrl" alt="@($"{_client.ClientFirstName} {_client.ClientLastName}")" height="100" class="hover-zoom rounded border" />
+        }
+    </div>
+
+    <div class="camera-button-group">
+        <button id="ButtonReturnToClientManager" type="button" class="btn btn-outline-secondary" @onclick="ReturnToClientManagerAsync">
+            @Localizer["ReturnToClientManager"]
+        </button>
+    </div>
+}
+
+@code {
+    public override SecurityAccessLevel SecurityAccessLevel => SecurityAccessLevel.Edit;
+
+    public override string Actions => "Camera";
+
+    public override string Title => "Manage Photo ID";
+
+    public override List<Resource> Resources => new List<Resource>()
+    {
+        new Stylesheet("_content/GIBS.Module.FBClients/Module.css"),
+        new Script("_content/GIBS.Module.FBClients/Module.js")
+    };
+
+    private bool _initialized;
+    private bool _cameraStarted;
+    private int _clientId = -1;
+    private FBClientsSettings _settings = new();
+    private Models.FBClients _client;
+    private string _clientInfoText = string.Empty;
+    private string _currentPhotoDataUrl = string.Empty;
+    private bool _hasCurrentPhoto;
+    private string _capturedImageDataUrl = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (PageState.QueryString.TryGetValue("id", out var idStr) && int.TryParse(idStr, out var parsedId))
+            {
+                _clientId = parsedId;
+            }
+            else if (PageState.QueryString.TryGetValue("cid", out var cidStr) && int.TryParse(cidStr, out var parsedCid))
+            {
+                _clientId = parsedCid;
+            }
+
+            if (_clientId <= 0)
+            {
+                NavigationManager.NavigateTo(NavigateUrl());
+                return;
+            }
+
+            var settingsDict = await SettingService.GetModuleSettingsAsync(ModuleState.ModuleId);
+            _settings = FBClientsSettings.FromDictionary(settingsDict);
+
+            await FillClientRecordAsync(_clientId);
+            _initialized = true;
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Loading Camera Page {ClientId} {Error}", _clientId, ex.Message);
+            AddModuleMessage(Localizer["Message.LoadError"], MessageType.Error);
+            _initialized = true;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_initialized && _client != null && !_cameraStarted)
+        {
+            _cameraStarted = true;
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("GIBS.FBClients.startCamera", "player", "https", "no-device", "no-support");
+            }
+            catch
+            {
+                // Ignore JS interop errors during prerendering
+            }
+        }
+    }
+
+    private async Task FillClientRecordAsync(int clientId)
+    {
+        _client = await ClientFBClientsService.GetFBClientsAsync(clientId, ModuleState.ModuleId);
+        if (_client == null)
+        {
+            NavigationManager.NavigateTo(NavigateUrl());
+            return;
+        }
+
+        var townOrCity = !string.IsNullOrWhiteSpace(_client.ClientTown) ? _client.ClientTown : _client.ClientCity;
+        _clientInfoText = $"{_client.ClientFirstName} {_client.ClientLastName} - {_client.ClientAddress}, {townOrCity}, {_client.ClientState} {_client.ClientZipCode}";
+
+        var idPhotos = await ClientFBClientsService.GetFBClientsIDPhotosAsync(clientId, ModuleState.ModuleId);
+        var latestPhoto = idPhotos?.FirstOrDefault(p => p.IDPhoto != null && p.IDPhoto.Length > 0);
+        if (latestPhoto != null)
+        {
+            _currentPhotoDataUrl = $"data:image/png;base64,{Convert.ToBase64String(latestPhoto.IDPhoto)}";
+            _hasCurrentPhoto = true;
+        }
+        else if (_client.ClientPhoto != null && _client.ClientPhoto.Length > 0)
+        {
+            _currentPhotoDataUrl = $"data:image/png;base64,{Convert.ToBase64String(_client.ClientPhoto)}";
+            _hasCurrentPhoto = true;
+        }
+        else
+        {
+            _currentPhotoDataUrl = string.Empty;
+            _hasCurrentPhoto = false;
+        }
+    }
+
+    private async Task CaptureImageAsync()
+    {
+        try
+        {
+            var dataUrl = await JSRuntime.InvokeAsync<string>("GIBS.FBClients.captureSnapshot", "player", "capture");
+            if (!string.IsNullOrWhiteSpace(dataUrl))
+            {
+                _capturedImageDataUrl = dataUrl;
+            }
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Capturing Camera Snapshot {ClientId} {Error}", _clientId, ex.Message);
+        }
+    }
+
+    private async Task SaveImageAsync()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_capturedImageDataUrl))
+            {
+                return;
+            }
+
+            const string prefix = "data:image/png;base64,";
+            var base64Data = _capturedImageDataUrl.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? _capturedImageDataUrl.Substring(prefix.Length)
+                : _capturedImageDataUrl;
+
+            var imageBytes = Convert.FromBase64String(base64Data);
+            var photo = new FBClientsIDPhoto
+            {
+                FBClientsId = _clientId,
+                IDPhoto = imageBytes
+            };
+
+            await ClientFBClientsService.SaveFBClientsIDPhotoAsync(photo, ModuleState.ModuleId);
+            await FillClientRecordAsync(_clientId);
+            AddModuleMessage(Localizer["Message.PhotoSaved"], MessageType.Success);
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Saving Client ID Photo {ClientId} {Error}", _clientId, ex.Message);
+            AddModuleMessage(Localizer["Message.SaveError"], MessageType.Error);
+        }
+    }
+
+    private async Task ReturnToClientManagerAsync()
+    {
+        await StopCameraAsync();
+        NavigationManager.NavigateTo(EditUrl("Edit", $"id={_clientId}"));
+    }
+
+    private async Task StopCameraAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("GIBS.FBClients.stopCamera", "player");
+        }
+        catch
+        {
+            // Ignore errors on teardown
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopCameraAsync();
+    }
+}

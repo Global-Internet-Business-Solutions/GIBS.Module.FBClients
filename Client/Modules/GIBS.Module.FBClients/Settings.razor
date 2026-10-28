@@ -1,30 +1,430 @@
 @namespace GIBS.Module.FBClients
+@using GIBS.Module.FBClients.Models
 @inherits ModuleBase
 @implements Oqtane.Interfaces.ISettingsControl
 @inject ISettingService SettingService
+@inject IRoleService RoleService
 @inject IStringLocalizer<Settings> Localizer
 
-<div class="container">
-    <div class="row mb-1 align-items-center">
-        <Label Class="col-sm-3" For="value" HelpText="Enter a value" ResourceKey="SettingName" ResourceType="@resourceType">Name: </Label>
-            <div class="col-sm-9">
-                <input id="value" type="text" class="form-control" @bind="@_value" />
+@if (_initialized)
+{
+    <div class="container">
+        <Section Name="GeneralSection" Heading="Food Bank Settings" ResourceKey="sectPantryDetails" ResourceType="@resourceType" Expanded="true">
+            <div class="container">
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtFBName" HelpText="Food Bank Name" ResourceKey="lblFBName" ResourceType="@resourceType">Food Bank Name:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtFBName" type="text" class="form-control" maxlength="50" @bind="@_settings.FBName" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtFBAddress" HelpText="Address" ResourceKey="lblFBAddress" ResourceType="@resourceType">Address:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtFBAddress" type="text" class="form-control" maxlength="50" @bind="@_settings.FBAddress" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtFBCity" HelpText="City" ResourceKey="lblFBCity" ResourceType="@resourceType">City:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtFBCity" type="text" class="form-control" maxlength="50" @bind="@_settings.FBCity" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtFBState" HelpText="State" ResourceKey="lblFBState" ResourceType="@resourceType">State:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtFBState" type="text" class="form-control" maxlength="50" @bind="@_settings.FBState" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtFBZipCode" HelpText="Zip Code" ResourceKey="lblFBZipCode" ResourceType="@resourceType">Zip Code:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtFBZipCode" type="text" class="form-control" maxlength="50" @bind="@_settings.FBZipCode" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtFBPhoneNumber" HelpText="Phone" ResourceKey="lblFBPhoneNumber" ResourceType="@resourceType">Phone:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtFBPhoneNumber" type="text" class="form-control" maxlength="50" @bind="@_settings.FBPhoneNumber" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtFBFaxNumber" HelpText="Fax" ResourceKey="lblFBFaxNumber" ResourceType="@resourceType">Fax:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtFBFaxNumber" type="text" class="form-control" maxlength="50" @bind="@_settings.FBFaxNumber" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtAllowedIPAddress" HelpText="Pantry IP Address" ResourceKey="lblAllowedIPAddress" ResourceType="@resourceType">Pantry IP Address:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtAllowedIPAddress" type="text" class="form-control" @bind="@_settings.AllowedIPAddress" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtGoogleAPIKey" HelpText="Google Map API Key" ResourceKey="lblGoogleAPIKey" ResourceType="@resourceType">Google Map API Key:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtGoogleAPIKey" type="text" class="form-control" @bind="@_settings.GoogleAPIKey" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtGoogleGeocodeAPIKey" HelpText="Google Geocode API Key" ResourceKey="lblGoogleGeocodeAPIKey" ResourceType="@resourceType">Google Geocode API Key:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtGoogleGeocodeAPIKey" type="text" class="form-control" @bind="@_settings.GoogleGeocodeAPIKey" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxEnableGeocodeOnSave" HelpText="Enable Automatic Geocoding" ResourceKey="lblEnableGeocodeOnSave" ResourceType="@resourceType">Enable Automatic Geocoding:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxEnableGeocodeOnSave" type="checkbox" class="form-check-input" @bind="@_settings.EnableGeocodeOnSave" />
+                    </div>
+                </div>
             </div>
+        </Section>
+
+        <Section Name="GeneralSettings2" Heading="General Settings" ResourceKey="sectGeneralSettings" ResourceType="@resourceType" Expanded="true">
+            <div class="container">
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtIDCardImagePath" HelpText="ID Card Image Path" ResourceKey="lblIDCardImagePath" ResourceType="@resourceType">ID Card Image Path:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtIDCardImagePath" type="text" class="form-control" @bind="@_settings.IDCardImagePath" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="ddlDaysToValidVisit" HelpText="# of Days to Qualify for Visit" ResourceKey="lblDaysToValidVisit" ResourceType="@resourceType"># of Days to Qualify for Visit:</Label>
+                    <div class="col-sm-9">
+                        <select id="ddlDaysToValidVisit" class="form-select" @bind="@_settings.DaysToValidVisit">
+                            @for (int day = 1; day <= 30; day++)
+                            {
+                                var dayText = day.ToString();
+                                <option value="@dayText">@dayText</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowRequiredFields" HelpText="Show Required Fields" ResourceKey="lblShowRequiredFields" ResourceType="@resourceType">Show Required Fields:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowRequiredFields" type="checkbox" class="form-check-input" @bind="@_settings.ShowRequiredFields" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowPrimaryIncomeSource" HelpText="Show Primary Income Source" ResourceKey="lblShowPrimaryIncomeSource" ResourceType="@resourceType">Show Primary Income Source:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowPrimaryIncomeSource" type="checkbox" class="form-check-input" @bind="@_settings.ShowPrimaryIncomeSource" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowSendText" HelpText="Show Send Text" ResourceKey="lblShowSendText" ResourceType="@resourceType">Show Send Text:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowSendText" type="checkbox" class="form-check-input" @bind="@_settings.ShowSendText" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowClientServiceLocation" HelpText="Show Client Service Location" ResourceKey="lblShowClientServiceLocation" ResourceType="@resourceType">Show Client Service Location:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowClientServiceLocation" type="checkbox" class="form-check-input" @bind="@_settings.ShowClientServiceLocation" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowSuffix" HelpText="Show Client & AFM Suffix" ResourceKey="lblShowClientSuffix" ResourceType="@resourceType">Show Client &amp; AFM Suffix:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowSuffix" type="checkbox" class="form-check-input" @bind="@_settings.ShowSuffix" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowRelationshipToClient" HelpText="Show AFM Relationship To Client" ResourceKey="lblShowRelationshipToClient" ResourceType="@resourceType">Show AFM Relationship To Client:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowRelationshipToClient" type="checkbox" class="form-check-input" @bind="@_settings.ShowRelationshipToClient" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowEthnicity" HelpText="Show Ethnicity" ResourceKey="lblShowEthnicity" ResourceType="@resourceType">Show Ethnicity:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowEthnicity" type="checkbox" class="form-check-input" @bind="@_settings.ShowEthnicity" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowPhotoID" HelpText="Show Photo ID" ResourceKey="lblShowPhotoID" ResourceType="@resourceType">Show Photo ID:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowPhotoID" type="checkbox" class="form-check-input" @bind="@_settings.ShowPhotoID" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowOneBagOnly" HelpText="Show One Bag Only" ResourceKey="lblShowOneBagOnly" ResourceType="@resourceType">Show One Bag Only:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowOneBagOnly" type="checkbox" class="form-check-input" @bind="@_settings.ShowOneBagOnly" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowVisitStopLight" HelpText="Show Stop Light" ResourceKey="lblShowVisitStopLight" ResourceType="@resourceType">Show Stop Light:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowVisitStopLight" type="checkbox" class="form-check-input" @bind="@_settings.ShowVisitStopLight" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowIncExpSummary" HelpText="Show Inc/Exp Summary" ResourceKey="lblShowIncExpSummary" ResourceType="@resourceType">Show Inc/Exp Summary:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowIncExpSummary" type="checkbox" class="form-check-input" @bind="@_settings.ShowIncExpSummary" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowExpense" HelpText="Show Expense Fields" ResourceKey="lblShowExpense" ResourceType="@resourceType">Show Expense Fields:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowExpense" type="checkbox" class="form-check-input" @bind="@_settings.ShowExpense" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowDisabilities" HelpText="Show Disabilities" ResourceKey="lblShowDisabilities" ResourceType="@resourceType">Show Disabilities:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowDisabilities" type="checkbox" class="form-check-input" @bind="@_settings.ShowDisabilities" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowClientType" HelpText="Show Client Type" ResourceKey="lblShowClientType" ResourceType="@resourceType">Show Client Type:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowClientType" type="checkbox" class="form-check-input" @bind="@_settings.ShowClientType" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowClientIdCard" HelpText="Show Client ID Card" ResourceKey="lblShowClientIdCard" ResourceType="@resourceType">Show Client ID Card:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowClientIdCard" type="checkbox" class="form-check-input" @bind="@_settings.ShowClientIdCard" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowPrintShoppingLabel" HelpText="Show Print Shopping Label" ResourceKey="lblShowPrintShoppingLabel" ResourceType="@resourceType">Show Print Shopping Label:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowPrintShoppingLabel" type="checkbox" class="form-check-input" @bind="@_settings.ShowPrintShoppingLabel" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtPrintShoppingLabelQuantity" HelpText="Print Shopping Label Quantity" ResourceKey="lblPrintShoppingLabelQuantity" ResourceType="@resourceType">Print Shopping Label Quantity:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtPrintShoppingLabelQuantity" type="text" class="form-control" @bind="@_settings.PrintShoppingLabelQuantity" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowPrintBarCodeLabel" HelpText="Show Print BarCode Label" ResourceKey="lblShowPrintBarCodeLabel" ResourceType="@resourceType">Show Print BarCode Label:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowPrintBarCodeLabel" type="checkbox" class="form-check-input" @bind="@_settings.ShowPrintBarCodeLabel" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxIncludeInactiveOnSearch" HelpText="Include InActives On Search" ResourceKey="lblIncludeInactiveOnSearch" ResourceType="@resourceType">Include InActives On Search:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxIncludeInactiveOnSearch" type="checkbox" class="form-check-input" @bind="@_settings.IncludeInactiveOnSearch" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtFlagForReviewNotify" HelpText="Comma seperated list of User ID's to notify" ResourceKey="lblFlagForReviewNotify" ResourceType="@resourceType">Flag For Review Notify:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtFlagForReviewNotify" type="text" class="form-control" @bind="@_settings.FlagForReviewNotify" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="ddlFocusableControl" HelpText="Set Search Focus" ResourceKey="lblFocusableControl" ResourceType="@resourceType">Set Search Focus:</Label>
+                    <div class="col-sm-9">
+                        <select id="ddlFocusableControl" class="form-select" @bind="@_settings.FocusableControl">
+                            <option value="txtClientId">ClientId</option>
+                            <option value="txtLastName">Last Name</option>
+                            <option value="txtFirstName">First Name</option>
+                            <option value=""></option>
+                        </select>
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtBagAllowance" HelpText="Format like: &quot;1=3,2=3,3=3,4=5,5=5,6=5,7=6&quot;" ResourceKey="lblBagAllowance" ResourceType="@resourceType">Bag Allowance:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtBagAllowance" type="text" class="form-control" @bind="@_settings.BagAllowance" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtGroupHomeBagAllowance" HelpText="Group Home Bag Allowance" ResourceKey="lblGroupHomeBagAllowance" ResourceType="@resourceType">Group Home Bag Allowance:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtGroupHomeBagAllowance" type="text" class="form-control" @bind="@_settings.GroupHomeBagAllowance" />
+                    </div>
+                </div>
+            </div>
+        </Section>
+
+        <Section Name="TwilioSection" Heading="Twilio Fields" ResourceKey="sectTwilio" ResourceType="@resourceType" Expanded="true">
+            <div class="container">
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtTwilioAccountSid" HelpText="Twilio AccountSid" ResourceKey="lblTwilioAccountSid" ResourceType="@resourceType">Twilio AccountSid:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtTwilioAccountSid" type="text" class="form-control" @bind="@_settings.TwilioAccountSid" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtTwilioAuthToken" HelpText="Twilio AuthToken" ResourceKey="lblTwilioAuthToken" ResourceType="@resourceType">Twilio AuthToken:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtTwilioAuthToken" type="text" class="form-control" @bind="@_settings.TwilioAuthToken" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtTwilioPhoneNumber" HelpText="Twilio Phone Number" ResourceKey="lblTwilioPhoneNumber" ResourceType="@resourceType">Twilio Phone Number:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtTwilioPhoneNumber" type="text" class="form-control" @bind="@_settings.TwilioPhoneNumber" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtClientOrderPage" HelpText="Client Order Page" ResourceKey="lblClientOrderPage" ResourceType="@resourceType">Client Order Page:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtClientOrderPage" type="text" class="form-control" @bind="@_settings.ClientOrderPage" />
+                    </div>
+                </div>
+            </div>
+        </Section>
+
+        <Section Name="ToyTicketSection" Heading="Christmas Toys" ResourceKey="sectToyTicket" ResourceType="@resourceType" Expanded="false">
+            <div class="container">
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowXmasToys" HelpText="Show Christmas Toys" ResourceKey="lblShowXmasToys" ResourceType="@resourceType">Show Christmas Toys:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowXmasToys" type="checkbox" class="form-check-input" @bind="@_settings.ShowXmasToys" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtXmasToysYear" HelpText="Christmas Toys Year" ResourceKey="lblXmasToysYear" ResourceType="@resourceType">Christmas Toys Year:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtXmasToysYear" type="text" class="form-control" maxlength="4" @bind="@_settings.XmasToysYear" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="txtXmasRequireSizeAgeRange" HelpText="Comma seperated age range . . . like: 10,14" ResourceKey="lblXmasRequireSizeAgeRange" ResourceType="@resourceType">Christmas Require Size Age Range:</Label>
+                    <div class="col-sm-9">
+                        <input id="txtXmasRequireSizeAgeRange" type="text" class="form-control" maxlength="5" @bind="@_settings.XmasRequireSizeAgeRange" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxShowXmasGiftFields" HelpText="Show Xmas Gift Fields" ResourceKey="lblShowXmasGiftFields" ResourceType="@resourceType">Show Xmas Gift Fields:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxShowXmasGiftFields" type="checkbox" class="form-check-input" @bind="@_settings.ShowXmasGiftFields" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-start">
+                    <Label Class="col-sm-3" For="txtToyTicketContent" HelpText="Toy Ticket Content" ResourceKey="lblToyTicketContent" ResourceType="@resourceType">Toy Ticket Content:</Label>
+                    <div class="col-sm-9">
+                        <RichTextEditor @ref="_toyTicketEditor" Content="@_settings.ToyTicketContent" AllowRawHtml="true" />
+                    </div>
+                </div>
+            </div>
+        </Section>
+
+        <Section Name="InstructionsSection" Heading="Instructions" ResourceKey="sectInstructions" ResourceType="@resourceType" Expanded="false">
+            <div class="container">
+                <div class="row mb-1 align-items-start">
+                    <Label Class="col-sm-3" For="txtIncomeEligibilityGuidelines" HelpText="Income Eligibility Guidelines" ResourceKey="lblIncomeEligibilityGuidelines" ResourceType="@resourceType">Income Eligibility Guidelines:</Label>
+                    <div class="col-sm-9">
+                        <RichTextEditor @ref="_incomeEligibilityGuidelinesEditor" Content="@_settings.IncomeEligibilityGuidelines" AllowRawHtml="true" />
+                    </div>
+                </div>
+            </div>
+        </Section>
+
+        <Section Name="RequiredFieldsSetion" Heading="Required Fields" ResourceKey="sectRequiredFields" ResourceType="@resourceType" Expanded="true">
+            <div class="container">
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxPrimaryIncomeSource" HelpText="Require Primary Income Source" ResourceKey="lblReqPrimaryIncomeSource" ResourceType="@resourceType">Require Primary Income Source:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxPrimaryIncomeSource" type="checkbox" class="form-check-input" @bind="@_settings.ReqPrimaryIncomeSource" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxReguireZipCode" HelpText="Require Zip Code" ResourceKey="lblReguireZipCode" ResourceType="@resourceType">Require Zip Code:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxReguireZipCode" type="checkbox" class="form-check-input" @bind="@_settings.ReqZipCode" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxReguireClientGender" HelpText="Require Client Gender" ResourceKey="lblReguireClientGender" ResourceType="@resourceType">Require Client Gender:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxReguireClientGender" type="checkbox" class="form-check-input" @bind="@_settings.ReqGender" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxRequireClientEthnicity" HelpText="Require Client Ethnicity" ResourceKey="lblRequireClientEthnicity" ResourceType="@resourceType">Require Client Ethnicity:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxRequireClientEthnicity" type="checkbox" class="form-check-input" @bind="@_settings.ReqEthnicity" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="cbxReqAFMVerified" HelpText="Require AFM Verified DOB" ResourceKey="lblReqAFMVerified" ResourceType="@resourceType">Require AFM Verified DOB:</Label>
+                    <div class="col-sm-9">
+                        <input id="cbxReqAFMVerified" type="checkbox" class="form-check-input" @bind="@_settings.ReqAFMVerified" />
+                    </div>
+                </div>
+            </div>
+        </Section>
+
+        <Section Name="PermissionsSection" Heading="Permissions" ResourceKey="sectPermissions" ResourceType="@resourceType" Expanded="true">
+            <div class="container">
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="ddlClientManagerUserRole" HelpText="Client Mgr" ResourceKey="lblClientManagerUserRole" ResourceType="@resourceType">Client Mgr:</Label>
+                    <div class="col-sm-9">
+                        <select id="ddlClientManagerUserRole" class="form-select" @bind="@_settings.ClientManagerUserRole">
+                            <option value="">-- Select Role to Assign --</option>
+                            @foreach (var roleName in GetSelectableRoles(_settings.ClientManagerUserRole))
+                            {
+                                <option value="@roleName">@roleName</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="ddlClientManagerDeleteRole" HelpText="People in this role have the ability to delete client records." ResourceKey="lblClientManagerDeleteRole" ResourceType="@resourceType">Delete Clients:</Label>
+                    <div class="col-sm-9">
+                        <select id="ddlClientManagerDeleteRole" class="form-select" @bind="@_settings.ClientManagerDeleteRecordRole">
+                            <option value="">-- Select Role to Assign --</option>
+                            @foreach (var roleName in GetSelectableRoles(_settings.ClientManagerDeleteRecordRole))
+                            {
+                                <option value="@roleName">@roleName</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </Section>
     </div>
-</div>
+}
 
 @code {
-    private string resourceType = "GIBS.Module.FBClients.Settings, GIBS.Module.FBClients.Client.Oqtane"; // for localization
+    private static readonly HashSet<string> ExcludedDefaultRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        RoleNames.Admin,
+        RoleNames.Registered,
+        RoleNames.Everyone,
+        RoleNames.Unauthenticated,
+        "Subscribers"
+    };
+
+    private string resourceType = "GIBS.Module.FBClients.Settings, GIBS.Module.FBClients.Client.Oqtane";
     public override string Title => "FBClients Settings";
 
-    string _value;
+    private bool _initialized;
+    private FBClientsSettings _settings = new();
+    private List<string> _availableRoles = new();
+    private RichTextEditor _toyTicketEditor;
+    private RichTextEditor _incomeEligibilityGuidelinesEditor;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
             Dictionary<string, string> settings = await SettingService.GetModuleSettingsAsync(ModuleState.ModuleId);
-            _value = SettingService.GetSetting(settings, "SettingName", "");
+            _settings = FBClientsSettings.FromDictionary(settings);
+
+            var roles = await RoleService.GetRolesAsync(PageState.Site.SiteId);
+            if (roles != null)
+            {
+                _availableRoles = roles
+                    .Where(role => !string.IsNullOrWhiteSpace(role.Name) && !ExcludedDefaultRoles.Contains(role.Name))
+                    .Select(role => role.Name)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+
+            _initialized = true;
         }
         catch (Exception ex)
         {
@@ -36,8 +436,18 @@
     {
         try
         {
+            if (_toyTicketEditor != null)
+            {
+                _settings.ToyTicketContent = await _toyTicketEditor.GetHtml();
+            }
+
+            if (_incomeEligibilityGuidelinesEditor != null)
+            {
+                _settings.IncomeEligibilityGuidelines = await _incomeEligibilityGuidelinesEditor.GetHtml();
+            }
+
             var settings = await SettingService.GetModuleSettingsAsync(ModuleState.ModuleId);
-            settings = SettingService.SetSetting(settings, "SettingName", _value);
+            _settings.ApplyToDictionary(settings);
             await SettingService.UpdateModuleSettingsAsync(settings, ModuleState.ModuleId);
         }
         catch (Exception ex)
@@ -45,4 +455,15 @@
             AddModuleMessage(ex.Message, MessageType.Error);
         }
     }
+
+    private IEnumerable<string> GetSelectableRoles(string currentRole)
+    {
+        if (!string.IsNullOrWhiteSpace(currentRole) && !_availableRoles.Contains(currentRole, StringComparer.OrdinalIgnoreCase))
+        {
+            return new[] { currentRole }.Concat(_availableRoles);
+        }
+
+        return _availableRoles;
+    }
 }
+
