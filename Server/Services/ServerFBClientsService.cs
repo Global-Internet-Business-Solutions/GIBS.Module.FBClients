@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Oqtane.Enums;
 using Oqtane.Infrastructure;
 using Oqtane.Models;
+using Oqtane.Providers;
 using Oqtane.Repository;
 using Oqtane.Security;
 using Oqtane.Shared;
@@ -22,6 +23,7 @@ namespace GIBS.Module.FBClients.Services
         private readonly ISettingRepository _settingRepository;
         private readonly IFolderRepository _folderRepository;
         private readonly IFileRepository _fileRepository;
+        private readonly IStorageProviderFactory _storageProviderFactory;
         private readonly ILogManager _logger;
         private readonly IHttpContextAccessor _accessor;
         private readonly Alias _alias;
@@ -36,13 +38,15 @@ namespace GIBS.Module.FBClients.Services
             ITenantManager tenantManager,
             ILogManager logger,
             IHttpContextAccessor accessor,
-            IFBClientsOrderTextSender orderTextSender)
+            IFBClientsOrderTextSender orderTextSender,
+            IStorageProviderFactory storageProviderFactory)
         {
             _FBClientsRepository = FBClientsRepository;
             _userPermissions = userPermissions;
             _settingRepository = settingRepository;
             _folderRepository = folderRepository;
             _fileRepository = fileRepository;
+            _storageProviderFactory = storageProviderFactory;
             _logger = logger;
             _accessor = accessor;
             _alias = tenantManager.GetAlias();
@@ -517,20 +521,20 @@ namespace GIBS.Module.FBClients.Services
             return Task.FromResult<List<Models.FBClientsIDPhoto>>(null);
         }
 
-        public Task<Models.FBClientsIDPhoto> SaveFBClientsIDPhotoAsync(Models.FBClientsIDPhoto FBClientsIDPhoto, int ModuleId)
+        public async Task<Models.FBClientsIDPhoto> SaveFBClientsIDPhotoAsync(Models.FBClientsIDPhoto FBClientsIDPhoto, int ModuleId)
         {
             if (FBClientsIDPhoto != null && _userPermissions.IsAuthorized(_accessor.HttpContext.User, _alias.SiteId, EntityNames.Module, ModuleId, PermissionNames.Edit) && IsClientInModule(FBClientsIDPhoto.FBClientsId, ModuleId))
             {
                 FBClientsIDPhoto = _FBClientsRepository.SaveFBClientsIDPhoto(FBClientsIDPhoto);
-                SavePhotoToOqtaneFolder(FBClientsIDPhoto, ModuleId);
+                await SavePhotoToOqtaneFolderAsync(FBClientsIDPhoto, ModuleId);
                 _logger.Log(LogLevel.Information, this, LogFunction.Update, "FBClientsIDPhoto Saved {ImageId} {FBClientsId} {ModuleId}", FBClientsIDPhoto.ImageId, FBClientsIDPhoto.FBClientsId, ModuleId);
-                return Task.FromResult(FBClientsIDPhoto);
+                return FBClientsIDPhoto;
             }
             _logger.Log(LogLevel.Error, this, LogFunction.Security, "Unauthorized FBClientsIDPhoto Save Attempt {FBClientsId} {ModuleId}", FBClientsIDPhoto?.FBClientsId, ModuleId);
-            return Task.FromResult<Models.FBClientsIDPhoto>(null);
+            return null;
         }
 
-        private void SavePhotoToOqtaneFolder(Models.FBClientsIDPhoto photo, int moduleId)
+        private async Task SavePhotoToOqtaneFolderAsync(Models.FBClientsIDPhoto photo, int moduleId)
         {
             if (photo?.IDPhoto == null || photo.IDPhoto.Length == 0)
             {
@@ -552,20 +556,13 @@ namespace GIBS.Module.FBClients.Services
                     return;
                 }
 
-                var folderPath = _folderRepository.GetFolderPath(folder);
-                if (string.IsNullOrWhiteSpace(folderPath))
-                {
-                    return;
-                }
-
-                if (!Directory.Exists(folderPath))
-                {
-                    Directory.CreateDirectory(folderPath);
-                }
-
+                var storageProvider = _storageProviderFactory.GetProvider(folder)
+                    ?? throw new InvalidOperationException($"Storage provider not found for folder {folder.FolderId}.");
                 var fileName = $"{photo.FBClientsId}.jpg";
-                var fullPath = Path.Combine(folderPath, fileName);
-                System.IO.File.WriteAllBytes(fullPath, photo.IDPhoto);
+                using (var stream = new MemoryStream(photo.IDPhoto))
+                {
+                    await storageProvider.AddFileAsync(folder, fileName, stream);
+                }
 
                 var existingFile = _fileRepository.GetFile(folder.FolderId, fileName);
                 if (existingFile == null)

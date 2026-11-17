@@ -17,7 +17,7 @@
         <summary></summary>
         <packageTypes>
             <packageType name="Dependency" />
-            <packageType name="Oqtane.Framework" version="10.2.6" />
+            <packageType name="Oqtane.Framework" version="10.3.1" />
         </packageTypes>
     </metadata>
     <files>
