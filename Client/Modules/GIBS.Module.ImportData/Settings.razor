@@ -1,0 +1,65 @@
+@namespace GIBS.Module.FBClients.ImportData
+@using Oqtane.Security
+@inherits ModuleBase
+@implements ISettingsControl
+@inject IImportDataService ImportData
+@inject IStringLocalizer<Settings> Localizer
+
+@if (!IsAdministrator)
+{
+    <p class="alert alert-warning">@Localizer["Only site administrators can configure the DNN connection."]</p>
+}
+else
+{
+    <div class="container">
+        <p>@Localizer["Configure a SQL Server connection to the DNN source database. Use an account with read-only access to the required tables."]</p>
+        <div class="row mb-3">
+            <label class="col-sm-3 col-form-label" for="import-connection">@Localizer["DNN connection string"]</label>
+            <div class="col-sm-9">
+                <input id="import-connection" type="password" class="form-control" autocomplete="off" @bind="_connectionString" disabled="@(!_ready || _remove)" />
+                <div class="form-text">@Localizer["Include the server and database. Leave blank to keep the existing connection; it is never displayed after saving."]</div>
+            </div>
+        </div>
+        @if (_hasConnection)
+        {
+            <p>@Localizer["A module connection is configured."]</p>
+            <label class="form-check mb-3"><input type="checkbox" class="form-check-input" @bind="_remove" disabled="@(!_ready)" /> @Localizer["Remove the saved connection"]</label>
+        }
+        else if (_ready)
+        {
+            <p>@Localizer["No module connection is configured. You may instead use a source configured by the host administrator."]</p>
+        }
+        <p class="form-text">@Localizer["Save these settings, then use Connect and Inspect Tables on the Import Data page. No records are imported by this screen."]</p>
+    </div>
+}
+
+@code {
+    public override string Title => "Import Data Settings";
+    public override SecurityAccessLevel SecurityAccessLevel => SecurityAccessLevel.Admin;
+    public override bool? Prerender => false;
+    private bool IsAdministrator => PageState.User?.IsAuthenticated == true && UserSecurity.IsAuthorized(PageState.User, RoleNames.Admin);
+    private bool _ready, _hasConnection, _remove;
+    private string _connectionString;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsAdministrator) return;
+        _hasConnection = await ImportData.HasConnectionAsync(ModuleState.ModuleId);
+        _ready = true;
+    }
+
+    public async Task UpdateSettings()
+    {
+        if (!IsAdministrator) throw new UnauthorizedAccessException("Only site administrators can configure the DNN connection.");
+        if (!_ready) throw new InvalidOperationException("Import Data settings have not loaded.");
+        if (_remove && !string.IsNullOrWhiteSpace(_connectionString))
+            throw new InvalidOperationException("Clear the new connection string before removing the saved connection.");
+        if (_remove || !string.IsNullOrWhiteSpace(_connectionString))
+        {
+            await ImportData.SaveConnectionAsync(ModuleState.ModuleId, new ImportConnectionChange(_connectionString, _remove));
+            _hasConnection = !_remove;
+            _connectionString = null;
+            _remove = false;
+        }
+    }
+}

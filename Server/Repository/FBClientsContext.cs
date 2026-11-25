@@ -4,6 +4,7 @@ using Oqtane.Modules;
 using Oqtane.Repository;
 using Oqtane.Infrastructure;
 using Oqtane.Repository.Databases.Interfaces;
+using GIBS.Module.FBClients.Inventory.Models;
 
 namespace GIBS.Module.FBClients.Repository
 {
@@ -17,12 +18,19 @@ namespace GIBS.Module.FBClients.Repository
         public virtual DbSet<Models.FBClientsTrueFalseQuestions> FBClientsTrueFalseQuestions { get; set; }
         public virtual DbSet<Models.FBClientsIDPhoto> FBClientsIDPhotos { get; set; }
         public virtual DbSet<Models.FBClientsChristmas> FBClientsChristmas { get; set; }
+        public virtual DbSet<Models.FBTurkeyRecipient> FBTurkeyRecipients { get; set; }
         public virtual DbSet<Models.FBClientsMerged> FBClientsMerged { get; set; }
         public virtual DbSet<Models.FBClientsAddFamMemMerged> FBClientsAddFamMemMerged { get; set; }
         public virtual DbSet<Models.FBClientsIncomeAndExpenseMerged> FBClientsIncomeAndExpenseMerged { get; set; }
         public virtual DbSet<Models.FBClientsTrueFalseQuestionsMerged> FBClientsTrueFalseQuestionsMerged { get; set; }
         public virtual DbSet<Models.FBClientsVisitsMerged> FBClientsVisitsMerged { get; set; }
         public virtual DbSet<Models.FBClientsChristmasMerged> FBClientsChristmasMerged { get; set; }
+        public virtual DbSet<Lists.Models.Lists> Lists { get; set; }
+        public DbSet<FBProductCategory> FBProductCategories { get; set; }
+        public DbSet<FBProduct> FBProducts { get; set; }
+        public DbSet<FBSupplier> FBSuppliers { get; set; }
+        public DbSet<FBInvoice> FBInvoices { get; set; }
+        public DbSet<FBLineItem> FBLineItems { get; set; }
 
         public FBClientsContext(IDBContextDependencies DBContextDependencies) : base(DBContextDependencies)
         {
@@ -66,9 +74,17 @@ namespace GIBS.Module.FBClients.Repository
 
             FBClientsActivityConfiguration.Configure(builder, ActiveDatabase);
             FBClientsArchiveConfiguration.Configure(builder, ActiveDatabase);
+            InventoryConfiguration.Configure(builder, ActiveDatabase);
+
+            var lists = builder.Entity<Lists.Models.Lists>();
+            lists.ToTable(ActiveDatabase.RewriteName("GIBSFBClientsLists"));
+            lists.HasOne<Oqtane.Models.Module>().WithMany().HasForeignKey(x => x.ModuleId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             foreach (var entityType in builder.Model.GetEntityTypes()
-                .Where(x => x.ClrType.Namespace == typeof(Models.FBClients).Namespace).ToList())
+                .Where(x => x.ClrType.Namespace == typeof(Models.FBClients).Namespace
+                    || x.ClrType.Namespace == typeof(FBProduct).Namespace
+                    || x.ClrType == typeof(Lists.Models.Lists)).ToList())
             {
                 builder.Entity(entityType.ClrType).Property<string>("CreatedBy").HasMaxLength(256).IsRequired();
                 builder.Entity(entityType.ClrType).Property<string>("ModifiedBy").HasMaxLength(256).IsRequired();

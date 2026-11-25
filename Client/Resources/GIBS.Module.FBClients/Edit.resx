@@ -402,6 +402,33 @@
   <data name="Message.LoadError" xml:space="preserve">
     <value>Error Loading FBClients</value>
   </data>
+  <data name="Message.AddressCitiesMissing" xml:space="preserve">
+    <value>No towns are available. Ask an administrator to configure the City list and check its View permissions.</value>
+  </data>
+  <data name="Message.AddressListsLoadError" xml:space="preserve">
+    <value>The town list could not be loaded. Existing address values are still available.</value>
+  </data>
+  <data name="Message.AddressVillagesLoading" xml:space="preserve">
+    <value>Loading villages...</value>
+  </data>
+  <data name="Message.AddressVillagesLoadError" xml:space="preserve">
+    <value>Villages for the selected town could not be loaded.</value>
+  </data>
+  <data name="Message.ClientOptionsMissing" xml:space="preserve">
+    <value>No usable entries were found for {0}. Ask an administrator to configure the list and check its View permissions.</value>
+  </data>
+  <data name="Message.ClientOptionsInvalid" xml:space="preserve">
+    <value>Some entries in {0} have invalid values and were not shown.</value>
+  </data>
+  <data name="Message.ClientOptionsLoadError" xml:space="preserve">
+    <value>The {0} list could not be loaded. Existing selections are still available.</value>
+  </data>
+  <data name="Message.PrimaryIncomeOptionsTooLong" xml:space="preserve">
+    <value>ClientIncome values longer than {0} characters are not available for Primary Income Source.</value>
+  </data>
+  <data name="Message.DisabilitySelectionTooLong" xml:space="preserve">
+    <value>The selected disability values exceed {0} characters. Remove one or more selections before saving.</value>
+  </data>
   <data name="Message.SaveValidation" xml:space="preserve">
     <value>Please Provide All Required Information</value>
   </data>

@@ -274,8 +274,13 @@ namespace GIBS.Module.FBClients.Repository
         public Models.FBClientsVisits UpdateFBClientsVisit(Models.FBClientsVisits FBClientsVisit)
         {
             using var db = _factory.CreateDbContext();
-            db.Entry(FBClientsVisit).State = EntityState.Modified;
+            var entry = db.Entry(FBClientsVisit);
+            entry.State = EntityState.Modified;
+            entry.Property(visit => visit.FBClientsId).IsModified = false;
+            entry.Property(visit => visit.OrderStatusCode).IsModified = false;
             db.SaveChanges();
+            FBClientsVisit.OrderStatusCode = db.FBClientsVisits.Where(visit => visit.VisitId == FBClientsVisit.VisitId)
+                .Select(visit => visit.OrderStatusCode).SingleOrDefault();
             return FBClientsVisit;
         }
 

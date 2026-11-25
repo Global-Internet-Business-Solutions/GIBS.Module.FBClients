@@ -1,0 +1,12 @@
+@namespace GIBS.Module.FBClients.Inventory
+@using GIBS.Module.FBClients.Inventory.Components
+@inherits ModuleBase
+
+<InvoiceDetailsContent @key="InvoiceId" InvoiceId="InvoiceId" RenderModeBoundary="RenderModeBoundary" />
+
+@code {
+    public override bool? Prerender => false;
+
+    private int InvoiceId => (RenderModeBoundary?.PageState ?? PageState).QueryString.TryGetValue("id", out var value)
+        && int.TryParse(value, out var id) && id > 0 ? id : 0;
+}

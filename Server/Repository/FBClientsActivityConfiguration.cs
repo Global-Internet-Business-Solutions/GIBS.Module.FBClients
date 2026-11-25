@@ -54,6 +54,13 @@ namespace GIBS.Module.FBClients.Repository
             christmas.Property(x => x.XmasGift1Size).IsUnicode(false);
             christmas.Property(x => x.XmasGift2Size).IsUnicode(false);
             christmas.Property(x => x.XmasGiftRecordID).IsUnicode(false);
+
+            var turkey = builder.Entity<FBTurkeyRecipient>();
+            turkey.ToTable(database.RewriteName("GIBSFBTurkeyRecipients"));
+            turkey.HasOne<Models.FBClients>().WithMany().HasForeignKey(x => x.FBClientsId).OnDelete(DeleteBehavior.Cascade);
+            turkey.Property(x => x.Holiday).IsUnicode(false);
+            turkey.HasIndex(x => new { x.FBClientsId, x.Year });
+            turkey.HasIndex(x => new { x.FBClientsId, x.Year, x.Holiday });
         }
     }
 }

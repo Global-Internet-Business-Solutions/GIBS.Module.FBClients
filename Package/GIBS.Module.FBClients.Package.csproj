@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <AccelerateBuildsInVisualStudio>false</AccelerateBuildsInVisualStudio>
   </PropertyGroup>
@@ -20,10 +20,10 @@
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Condition="'$(OS)' == 'Windows_NT' And '$(Configuration)' == 'Debug'" Command="debug.cmd $(TargetFramework) $([System.String]::Copy('$(MSBuildProjectName)').Replace('.Package',''))"  />
-    <Exec Condition="'$(OS)' != 'Windows_NT' And '$(Configuration)' == 'Debug'" Command="bash $(ProjectDir)debug.sh $(TargetFramework) $([System.String]::Copy('$(MSBuildProjectName)').Replace('.Package',''))" />
-    <Exec Condition="'$(OS)' == 'Windows_NT' And '$(Configuration)' == 'Release'" Command="release.cmd $(TargetFramework) $([System.String]::Copy('$(MSBuildProjectName)').Replace('.Package',''))" />
-    <Exec Condition="'$(OS)' != 'Windows_NT' And '$(Configuration)' == 'Release'" Command="bash $(ProjectDir)release.sh $(TargetFramework) $([System.String]::Copy('$(MSBuildProjectName)').Replace('.Package',''))" />
+    <Exec Condition="'$(OS)' == 'Windows_NT' And '$(Configuration)' == 'Debug'" WorkingDirectory="$(ProjectDir)" Command=".\debug.cmd $(TargetFramework) $([System.String]::Copy('$(MSBuildProjectName)').Replace('.Package',''))" />
+    <Exec Condition="'$(OS)' != 'Windows_NT' And '$(Configuration)' == 'Debug'" WorkingDirectory="$(ProjectDir)" Command="bash debug.sh $(TargetFramework) $([System.String]::Copy('$(MSBuildProjectName)').Replace('.Package',''))" />
+    <Exec Condition="'$(OS)' == 'Windows_NT' And '$(Configuration)' == 'Release'" WorkingDirectory="$(ProjectDir)" Command=".\release.cmd $(TargetFramework) $([System.String]::Copy('$(MSBuildProjectName)').Replace('.Package',''))" />
+    <Exec Condition="'$(OS)' != 'Windows_NT' And '$(Configuration)' == 'Release'" WorkingDirectory="$(ProjectDir)" Command="bash release.sh $(TargetFramework) $([System.String]::Copy('$(MSBuildProjectName)').Replace('.Package',''))" />
   </Target>
 
 </Project>

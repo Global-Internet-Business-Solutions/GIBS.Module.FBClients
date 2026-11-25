@@ -1,0 +1,110 @@
+@namespace GIBS.Module.FBClients.Inventory
+@using GIBS.Module.FBClients.Inventory.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inherits InventoryPageBase
+@inject IStringLocalizer<FoodReport> Localizer
+
+<a href="@NavigateUrl()">@Localizer["Back to Inventory"]</a>
+<h3>@Localizer["Food Inventory Report"]</h3>
+@if (SignedIn)
+{
+    <EditForm Model="_filter" OnValidSubmit="RunReportAsync" class="mb-3">
+        <fieldset disabled="@Busy" class="d-flex flex-wrap gap-3 align-items-end">
+            <label>@Localizer["Start Date"] <InputDate class="form-control" @bind-Value="_filter.Start" /></label>
+            <label>@Localizer["End Date"] <InputDate class="form-control" @bind-Value="_filter.End" /></label>
+            <label>@Localizer["Group By"]
+                <InputSelect class="form-select" @bind-Value="_filter.Group">
+                    <option value="supplier">@Localizer["Supplier and Report Type"]</option>
+                    <option value="category">@Localizer["Product Category"]</option>
+                    <option value="type">@Localizer["Report Type"]</option>
+                    <option value="combined">@Localizer["Supplier, Category and Report Type"]</option>
+                </InputSelect>
+            </label>
+            <button type="submit" class="btn btn-primary">@Localizer["Run Report"]</button>
+        </fieldset>
+    </EditForm>
+}
+@if (Busy)
+{
+    <p role="status">@Localizer["Running report..."]</p>
+}
+else if (_rows != null)
+{
+    <p>@Localizer["Invoice dates: {0} through {1}", _start.ToShortDateString(), _end.ToShortDateString()]</p>
+    @if (_rows.Count == 0)
+    {
+        <p>@Localizer["No invoice line items in this date range."]</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-sm table-striped">
+                <thead><tr><th>@Localizer["Date"]</th><th>@Localizer["Invoice"]</th><th>@Localizer["Organization"]</th><th>@Localizer["Supplier"]</th><th>@Localizer["Category"]</th><th>@Localizer["Product"]</th><th>@Localizer["Report Type"]</th><th>@Localizer["Count per Case"]</th><th>@Localizer["Weight per Case"]</th><th>@Localizer["Price per Case"]</th><th>@Localizer["Cases"]</th><th>@Localizer["Total Weight"]</th><th>@Localizer["Total Cost"]</th></tr></thead>
+                <tbody>@RenderGroups(_rows, GroupFields(), 0)</tbody>
+                <tfoot>@RenderTotals(Localizer["Grand Total"], _rows, "fw-bold")</tfoot>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private sealed class ReportFilter
+    {
+        public DateOnly Start { get; set; }
+        public DateOnly End { get; set; }
+        public string Group { get; set; } = "supplier";
+    }
+    private readonly ReportFilter _filter = new()
+    {
+        Start = DateOnly.FromDateTime(DateTime.Today.AddDays(1 - DateTime.Today.Day)),
+        End = DateOnly.FromDateTime(DateTime.Today)
+    };
+    private List<InventoryReportRow> _rows;
+    private DateOnly _start;
+    private DateOnly _end;
+    private string _group;
+    private string InvoiceUrl(int id) => NavigateUrl(InventoryId, nameof(InvoiceDetails), new Dictionary<string, string> { ["id"] = id.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+    private Task RunReportAsync() => RunAsync(async () =>
+    {
+        _rows = null;
+        _rows = await Inventory.GetReportAsync(InventoryId, _filter.Start, _filter.End);
+        _start = _filter.Start;
+        _end = _filter.End;
+        _group = _filter.Group;
+    });
+    private Func<InventoryReportRow, string>[] GroupFields() => _group switch
+    {
+        "category" => [row => row.Category],
+        "type" => [row => row.ReportType],
+        "combined" => [row => row.Supplier, row => row.Category, row => row.ReportType],
+        _ => [row => row.Supplier, row => row.ReportType]
+    };
+
+    private RenderFragment RenderGroups(IEnumerable<InventoryReportRow> rows, Func<InventoryReportRow, string>[] fields, int level) => @<text>
+        @if (level == fields.Length)
+        {
+            foreach (var row in rows)
+            {
+                <tr>
+                    <td>@row.Date.ToShortDateString()</td><td><a href="@InvoiceUrl(row.InvoiceId)">@DisplayName(row.Number, row.InvoiceId)</a></td>
+                    <td>@DisplayName(row.Organization)</td><td>@DisplayName(row.Supplier)</td><td>@DisplayName(row.Category)</td><td>@row.Product</td><td>@DisplayName(row.ReportType)</td>
+                    <td>@row.CountPerCase</td><td>@row.WeightPerCase.ToString("N2")</td><td>@row.PricePerCase.ToString("C4")</td>
+                    <td>@row.Cases</td><td>@row.Weight.ToString("N2")</td><td>@row.Cost.ToString("C2")</td>
+                </tr>
+            }
+        }
+        else
+        {
+            foreach (var group in rows.GroupBy(fields[level], StringComparer.CurrentCultureIgnoreCase).OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase))
+            {
+                <tr class="table-secondary"><th colspan="13">@DisplayName(group.Key)</th></tr>
+                @RenderGroups(group, fields, level + 1)
+                @RenderTotals(Localizer["Subtotal: {0}", DisplayName(group.Key)], group, "fw-semibold")
+            }
+        }
+    </text>;
+
+    private static RenderFragment RenderTotals(string label, IEnumerable<InventoryReportRow> rows, string style) => @<tr class="@style">
+        <th scope="row" colspan="10">@label</th><td>@rows.Sum(x => (long)x.Cases)</td><td>@rows.Sum(x => x.Weight).ToString("N2")</td><td>@rows.Sum(x => x.Cost).ToString("C2")</td>
+    </tr>;
+}

@@ -1,0 +1,335 @@
+@namespace GIBS.Module.FBClients.Fulfillment
+@using System.ComponentModel.DataAnnotations
+@using System.Globalization
+@using System.Net.Http
+@using GIBS.Module.FBClients.Models
+@using Microsoft.AspNetCore.Components.Forms
+@inherits ModuleBase
+@inject IFulfillmentService Fulfillment
+@inject ISettingService SettingService
+@inject IStringLocalizer<Index> Localizer
+
+<h3>@Localizer["Food Order Fulfillment"]</h3>
+@if (!SignedIn)
+{
+    <p>@Localizer["Sign in to access the fulfillment queue."]</p>
+}
+else
+{
+    @if (_notice != null)
+    {
+        <p class="alert @(_warning ? "alert-warning" : "alert-success")" role="status">@_notice</p>
+    }
+    @if (_busy)
+    {
+        <p role="status">@Localizer["Working..."]</p>
+    }
+    @if (_pendingText is int pending)
+    {
+        <div class="alert alert-warning">
+            <p>@Localizer["Send a pickup-ready text to {0}?", _pendingName]</p>
+            <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="() => SendTextAsync(pending)">@Localizer["Send Pickup Text"]</button>
+            <button type="button" class="btn btn-secondary" disabled="@_busy" @onclick="() => _pendingText = null">@Localizer["Cancel"]</button>
+        </div>
+    }
+    @if (_order == null)
+    {
+        <EditForm Model="_filter" OnValidSubmit="RefreshAsync" class="mb-3">
+            <fieldset disabled="@ActionsDisabled" class="d-flex flex-wrap gap-2 align-items-end">
+                <label>@Localizer["Visit Date"] <InputDate class="form-control" @bind-Value="_filter.Date" /></label>
+                <label>@Localizer["Order Status"]
+                    <InputSelect class="form-select" @bind-Value="_filter.Status">
+                        <option value="">@Localizer["All statuses"]</option>
+                        @foreach (var value in Enum.GetValues<FoodOrderStatus>()) { <option value="@((int)value)">@StatusLabel((int)value)</option> }
+                    </InputSelect>
+                </label>
+                <label>@Localizer["Service Location"]
+                    <InputSelect class="form-select" @bind-Value="_filter.Location">
+                        <option value="">@Localizer["All locations"]</option>
+                        @if (!string.IsNullOrEmpty(_filter.Location) && !Locations.Contains(_filter.Location)) { <option value="@_filter.Location">@_filter.Location</option> }
+                        @foreach (var location in Locations) { <option value="@location">@location</option> }
+                    </InputSelect>
+                </label>
+                <button type="submit" class="btn btn-primary">@Localizer["Refresh Queue"]</button>
+            </fieldset>
+        </EditForm>
+        @if (_queue != null)
+        {
+            <p>@Localizer["{0} visits on {1}", _queue.Total, _applied.Date.ToShortDateString()]</p>
+            @if (_queue.Visits.Count > 0)
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead><tr><th>@Localizer["Visit"]</th><th>@Localizer["Client"]</th><th>@Localizer["Time Entered"]</th><th>@Localizer["Bags"]</th><th>@Localizer["Location"]</th><th>@Localizer["Status"]</th><th>@Localizer["Actions"]</th></tr></thead>
+                        <tbody>
+                            @foreach (var visit in _queue.Visits)
+                            {
+                                <tr @key="visit.VisitId">
+                                    <td>@visit.VisitId</td>
+                                    <td>
+                                        @if (_queue.ClientPagePath != null) { <a href="@ClientUrl(visit.ClientId)">@visit.ClientName (#@visit.ClientId)</a> }
+                                        else { @visit.ClientName <text>(#@visit.ClientId)</text> }
+                                    </td>
+                                    <td>@visit.EnteredOn.ToShortTimeString()</td><td>@visit.Bags</td><td>@visit.Location</td>
+                                    <td>@StatusLabel(visit.Status) @if (visit.Locked) { <span class="badge text-bg-secondary">@Localizer["Locked"]</span> }</td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" disabled="@ActionsDisabled" @onclick="() => OpenAsync(visit.VisitId)">@OrderAction(visit)</button>
+                                        @if (visit.CanText && !_holdTexts.Contains(visit.VisitId))
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@ActionsDisabled" @onclick="() => ConfirmText(visit)">@Localizer["Pickup Text"]</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            @if (_page > 0 || HasNext)
+            {
+                <button type="button" class="btn btn-outline-secondary" disabled="@(ActionsDisabled || _page == 0)" @onclick="() => ChangePageAsync(_page - 1)">@Localizer["Previous"]</button>
+                <span class="mx-2">@Localizer["Page {0}", _page + 1]</span>
+                <button type="button" class="btn btn-outline-secondary" disabled="@(ActionsDisabled || !HasNext)" @onclick="() => ChangePageAsync(_page + 1)">@Localizer["Next"]</button>
+            }
+        }
+    }
+    else
+    {
+        <button type="button" class="btn btn-outline-secondary mb-3" disabled="@ActionsDisabled" @onclick="BackAsync">@Localizer["Back to Queue"]</button>
+        <h4>@_order.Visit.ClientName <span class="text-muted">(@Localizer["Visit {0}", _order.Visit.VisitId])</span></h4>
+        <p>@_order.Visit.Date.ToShortDateString() | @_order.Visit.Location | @StatusLabel(_order.Visit.Status)</p>
+        <p>@Localizer["Bags: {0}; household size: {1}", _order.Visit.Bags?.ToString() ?? "-", _order.HouseholdSize]</p>
+        @if (_order.Visit.Locked) { <p class="text-warning-emphasis">@Localizer["This client account is locked."]</p> }
+        @if (!string.IsNullOrWhiteSpace(_order.Notes)) { <p class="text-break" style="white-space: pre-wrap;"><strong>@Localizer["Visit Notes"]:</strong> @_order.Notes</p> }
+        @if (_order.CatalogAccess != FulfillmentCatalogAccess.Available)
+        {
+            <p class="alert alert-warning" role="status">@Localizer[_order.CatalogAccess == FulfillmentCatalogAccess.Denied
+                ? "You need View permission on the linked Inventory module to see product names, enter orders, or mark orders filled."
+                : "Set the Inventory Module ID in Fulfillment Settings to see product names, enter orders, or mark orders filled."]</p>
+        }
+        @if (_order.Sections.Any(x => x.Products.Count > 0))
+        {
+            <h5>@Localizer["Enter Paper Order"]</h5>
+            <fieldset disabled="@ActionsDisabled">
+                @foreach (var section in _order.Sections.Where(x => x.Products.Count > 0))
+                {
+                    <h6>@section.Name</h6>
+                    @if (!string.IsNullOrWhiteSpace(section.Instructions)) { <p style="white-space: pre-wrap;">@section.Instructions</p> }
+                    <div class="row g-2 mb-3">
+                        @foreach (var product in section.Products)
+                        {
+                            <label class="col-12 col-md-6 col-lg-4" @key="product.Id">@product.Name
+                                <select class="form-select" value="@_quantities.GetValueOrDefault(product.Id)" @onchange="e => SetQuantity(product.Id, e)">
+                                    @for (int quantity = 0; quantity <= product.Limit; quantity++) { <option value="@quantity">@quantity</option> }
+                                </select>
+                            </label>
+                        }
+                    </div>
+                }
+                <button type="button" class="btn btn-primary" disabled="@(_quantities.Count == 0)" @onclick="SavePaperAsync">@Localizer["Save Paper Order"]</button>
+            </fieldset>
+        }
+        else if (_order.Lines.Count > 0)
+        {
+            <h5>@Localizer[CanPack ? "Packing Checklist" : "Order Items"]</h5>
+            <div class="row g-2 mb-3">
+                @foreach (var line in _order.Lines)
+                {
+                    <div class="@(_twoColumns ? "col-12 col-md-6" : "col-12")" @key="line.Id">
+                        <div class="border rounded p-2">
+                            @if (CanPack)
+                            {
+                                <label class="d-block">
+                                    <input type="checkbox" class="form-check-input me-2" disabled="@ActionsDisabled" checked="@_checked.Contains(line.Id)" @onchange="e => SetChecked(line.Id, e)" />
+                                    @LineLabel(line)
+                                </label>
+                            }
+                            else { @LineLabel(line) }
+                        </div>
+                    </div>
+                }
+            </div>
+            @if (CanPack)
+            {
+                <p>@Localizer["{0} of {1} items checked", _checked.Count, _order.Lines.Count]</p>
+                <button type="button" class="btn btn-primary" disabled="@(ActionsDisabled || _checked.Count != _order.Lines.Count)" @onclick="MarkFilledAsync">@Localizer["Mark Order Filled"]</button>
+            }
+        }
+        else if (_order.Visit.Status == (int)FoodOrderStatus.LinkSent)
+        {
+            <p>@Localizer["The order link was sent, but no items have been submitted yet."]</p>
+        }
+        else { <p>@Localizer["No order items are saved for this visit."]</p> }
+        @if (_order.Visit.CanText && !_holdTexts.Contains(_order.Visit.VisitId))
+        {
+            <button type="button" class="btn btn-outline-primary" disabled="@ActionsDisabled" @onclick="() => ConfirmText(_order.Visit)">@Localizer["Pickup Text"]</button>
+        }
+    }
+}
+
+@code {
+    public override bool? Prerender => false;
+
+    private sealed record QueueFilter
+    {
+        public DateOnly Date { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public int? Status { get; set; }
+        public string Location { get; set; }
+    }
+
+    private readonly QueueFilter _filter = new();
+    private QueueFilter _applied = new();
+    private readonly Dictionary<int, int> _quantities = new();
+    private readonly HashSet<int> _checked = new();
+    private readonly HashSet<int> _holdTexts = new();
+    private FulfillmentQueue _queue;
+    private FulfillmentOrder _order;
+    private bool _busy, _showCategories = true, _twoColumns, _warning;
+    private int _page;
+    private int? _pendingText;
+    private string _pendingName, _notice;
+    private int ModuleId => ModuleState.ModuleId;
+    private bool SignedIn => PageState.User?.IsAuthenticated == true;
+    private bool CanEdit => SignedIn && IsAuthorizedPermission(PermissionNames.Edit);
+    private bool CanPack => CanEdit && _order.CatalogAccess == FulfillmentCatalogAccess.Available
+        && _order.Visit.Status == (int)FoodOrderStatus.Submitted && !_order.Visit.Locked;
+    private bool ActionsDisabled => _busy || _pendingText.HasValue;
+    private bool HasNext => (_page + 1L) * FulfillmentModule.PageSize < _queue.Total;
+    private IEnumerable<string> Locations => _queue?.Locations ?? Enumerable.Empty<string>();
+
+    protected override Task OnInitializedAsync() => SignedIn ? RunAsync(async () =>
+    {
+        var settings = await SettingService.GetModuleSettingsAsync(ModuleId);
+        _filter.Location = SettingService.GetSetting(settings, FulfillmentModule.DefaultLocation, "");
+        _showCategories = !bool.TryParse(SettingService.GetSetting(settings, FulfillmentModule.ShowCategories, ""), out var show) || show;
+        _twoColumns = bool.TryParse(SettingService.GetSetting(settings, FulfillmentModule.TwoColumns, ""), out var two) && two;
+        await LoadQueueAsync(_filter with { }, 0);
+    }) : Task.CompletedTask;
+
+    private string StatusLabel(int status) => (FoodOrderStatus)status switch
+    {
+        FoodOrderStatus.Paper => Localizer["Paper Order - Not Entered"],
+        FoodOrderStatus.LinkSent => Localizer["Order Link Sent"],
+        FoodOrderStatus.Submitted => Localizer["Ready to Fill"],
+        FoodOrderStatus.Filled => Localizer["Order Filled"],
+        FoodOrderStatus.PickupTextSent => Localizer["Pickup Text Sent"],
+        _ => Localizer["Unknown ({0})", status]
+    };
+
+    private string OrderAction(FulfillmentVisit visit) => (!CanEdit || visit.Locked) ? Localizer["View Order"] : (FoodOrderStatus)visit.Status switch
+    {
+        FoodOrderStatus.Paper => Localizer["Enter Order"],
+        FoodOrderStatus.Submitted => Localizer["Process Order"],
+        _ => Localizer["View Order"]
+    };
+
+    private string ClientUrl(int id) => NavigateUrl(_queue.ClientPagePath, _queue.ClientsModuleId, "Edit",
+        new Dictionary<string, string> { ["id"] = id.ToString(CultureInfo.InvariantCulture), ["TabFocus"] = "Visits" });
+    private string LineLabel(FulfillmentLine line) => _showCategories && !string.IsNullOrWhiteSpace(line.Category)
+        ? Localizer["{0}: {1} ({2})", line.Category, line.Product, line.Quantity] : Localizer["{0} ({1})", line.Product, line.Quantity];
+
+    private Task RefreshAsync() => RunAsync(() => LoadQueueAsync(_filter with { }, 0));
+    private Task ChangePageAsync(int page) => RunAsync(() => LoadQueueAsync(_applied, page));
+    private async Task LoadQueueAsync(QueueFilter filter, int page)
+    {
+        var queue = await Fulfillment.GetQueueAsync(ModuleId, filter.Date, filter.Status, filter.Location, page);
+        if (queue.Visits.Count == 0 && page > 0)
+        {
+            page = Math.Max(0, (queue.Total - 1) / FulfillmentModule.PageSize);
+            queue = await Fulfillment.GetQueueAsync(ModuleId, filter.Date, filter.Status, filter.Location, page);
+        }
+        _queue = queue;
+        _applied = filter;
+        _page = page;
+    }
+
+    private Task OpenAsync(int visitId) => RunAsync(() => LoadOrderAsync(visitId));
+    private async Task LoadOrderAsync(int visitId)
+    {
+        _order = await Fulfillment.GetOrderAsync(ModuleId, visitId);
+        _checked.Clear();
+        _quantities.Clear();
+    }
+    private Task BackAsync() => RunAsync(async () =>
+    {
+        _order = null;
+        _queue = null;
+        await LoadQueueAsync(_applied, _page);
+    });
+    private void SetQuantity(int productId, ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var quantity) && quantity > 0) _quantities[productId] = quantity;
+        else _quantities.Remove(productId);
+    }
+    private void SetChecked(int itemId, ChangeEventArgs args)
+    {
+        if (args.Value is true) _checked.Add(itemId);
+        else _checked.Remove(itemId);
+    }
+    private Task SavePaperAsync() => RunAsync(async () =>
+    {
+        var id = _order.Visit.VisitId;
+        await Fulfillment.SubmitPaperOrderAsync(ModuleId, id, new(_quantities));
+        _order = null;
+        Notify(Localizer["Paper order saved and ready to fill."]);
+        await LoadOrderAsync(id);
+    });
+    private Task MarkFilledAsync() => RunAsync(async () =>
+    {
+        var id = _order.Visit.VisitId;
+        await Fulfillment.MarkFilledAsync(ModuleId, id, _checked.ToArray());
+        _order = null;
+        Notify(Localizer["Order marked filled."]);
+        await LoadOrderAsync(id);
+    });
+    private void ConfirmText(FulfillmentVisit visit)
+    {
+        _notice = null;
+        _pendingName = visit.ClientName;
+        _pendingText = visit.VisitId;
+    }
+    private Task SendTextAsync(int id) => RunAsync(async () =>
+    {
+        _pendingText = null;
+        _holdTexts.Add(id);
+        FBClientsOrderTextResult result;
+        try { result = await Fulfillment.SendPickupTextAsync(ModuleId, id); }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or ValidationException or KeyNotFoundException or FulfillmentConflictException)
+        {
+            _holdTexts.Remove(id);
+            throw;
+        }
+        if (!result.Accepted && !result.AcceptanceUnconfirmed) _holdTexts.Remove(id);
+        if (result.StatusUpdated) Notify(Localizer["Twilio accepted the pickup text. Delivery is not confirmed."]);
+        else if (result.Accepted) Notify(Localizer["{0} Message SID: {1}", result.ErrorMessage, result.MessageSid], true);
+        else Notify(result.ErrorMessage, true);
+        if (_order != null) await LoadOrderAsync(id);
+        else await LoadQueueAsync(_applied, _page);
+    }, sendingText: true);
+
+    private void Notify(string message, bool warning = false)
+    {
+        _notice = message;
+        _warning = warning;
+    }
+    private async Task RunAsync(Func<Task> action, bool sendingText = false)
+    {
+        if (_busy || !SignedIn) return;
+        _busy = true;
+        _notice = null;
+        try { await action(); }
+        catch (UnauthorizedAccessException) { Notify(Localizer["You do not have permission to perform this fulfillment action."], true); }
+        catch (Exception ex) when (ex is ValidationException or KeyNotFoundException or FulfillmentConflictException)
+        {
+            if (_notice == null) Notify(ex.Message, true);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or System.Data.Common.DbException or TimeoutException or OperationCanceledException)
+        {
+            await logger.LogError(Oqtane.Enums.LogFunction.Other, "Fulfillment operation failed for module {ModuleId}: {ErrorType}", ModuleId, ex.GetType().Name);
+            if (_notice == null) Notify(sendingText
+                ? Localizer["The pickup text result could not be confirmed. Check Twilio before retrying."]
+                : Localizer["The fulfillment operation could not be confirmed. Refresh the queue before retrying."], true);
+        }
+        finally { _busy = false; }
+    }
+}

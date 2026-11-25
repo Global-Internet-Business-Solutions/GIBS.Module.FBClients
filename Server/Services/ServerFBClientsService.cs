@@ -12,6 +12,7 @@ using Oqtane.Repository;
 using Oqtane.Security;
 using Oqtane.Shared;
 using GIBS.Module.FBClients.Models;
+using GIBS.Module.FBClients.Ordering.Services;
 using GIBS.Module.FBClients.Repository;
 
 namespace GIBS.Module.FBClients.Services
@@ -28,6 +29,8 @@ namespace GIBS.Module.FBClients.Services
         private readonly IHttpContextAccessor _accessor;
         private readonly Alias _alias;
         private readonly IFBClientsOrderTextSender _orderTextSender;
+        private readonly FoodOrderLinks _orderLinks;
+        private readonly ServerFoodOrderService _foodOrders;
 
         public ServerFBClientsService(
             IFBClientsRepository FBClientsRepository,
@@ -39,7 +42,9 @@ namespace GIBS.Module.FBClients.Services
             ILogManager logger,
             IHttpContextAccessor accessor,
             IFBClientsOrderTextSender orderTextSender,
-            IStorageProviderFactory storageProviderFactory)
+            IStorageProviderFactory storageProviderFactory,
+            FoodOrderLinks orderLinks,
+            ServerFoodOrderService foodOrders)
         {
             _FBClientsRepository = FBClientsRepository;
             _userPermissions = userPermissions;
@@ -51,6 +56,8 @@ namespace GIBS.Module.FBClients.Services
             _accessor = accessor;
             _alias = tenantManager.GetAlias();
             _orderTextSender = orderTextSender;
+            _orderLinks = orderLinks;
+            _foodOrders = foodOrders;
         }
 
         private bool IsClientInModule(int fbClientsId, int moduleId)
@@ -293,7 +300,9 @@ namespace GIBS.Module.FBClients.Services
 
         public Task<Models.FBClientsVisits> UpdateFBClientsVisitAsync(Models.FBClientsVisits FBClientsVisit, int ModuleId)
         {
-            if (_userPermissions.IsAuthorized(_accessor.HttpContext.User, _alias.SiteId, EntityNames.Module, ModuleId, PermissionNames.Edit) && IsClientInModule(FBClientsVisit.FBClientsId, ModuleId))
+            if (FBClientsVisit != null && _userPermissions.IsAuthorized(_accessor.HttpContext.User, _alias.SiteId, EntityNames.Module, ModuleId, PermissionNames.Edit)
+                && _FBClientsRepository.GetFBClientsVisit(FBClientsVisit.VisitId, false)?.FBClientsId == FBClientsVisit.FBClientsId
+                && IsClientInModule(FBClientsVisit.FBClientsId, ModuleId))
             {
                 FBClientsVisit = _FBClientsRepository.UpdateFBClientsVisit(FBClientsVisit);
                 _logger.Log(LogLevel.Information, this, LogFunction.Update, "FBClientsVisits Updated {VisitId} {FBClientsId} {ModuleId}", FBClientsVisit.VisitId, FBClientsVisit.FBClientsId, ModuleId);
@@ -375,7 +384,21 @@ namespace GIBS.Module.FBClients.Services
             {
                 to = FBClientsOrderText.NormalizePhoneNumber(client.ClientPhone);
                 from = FBClientsOrderText.NormalizePhoneNumber(settings.TwilioPhoneNumber);
-                body = FBClientsOrderText.CreateMessage(settings.FBName, settings.ClientOrderPage, visit.VisitId, client.FBClientsId);
+                if (settings.OrderingModuleId != 0)
+                {
+                    var inventoryModuleId = settings.OrderingModuleId > 0
+                        ? await _foodOrders.GetOrderableInventoryAsync(_alias.SiteId, settings.OrderingModuleId, client.FBClientsId)
+                        : 0;
+                    if (inventoryModuleId == 0)
+                        return Reject("Select an FBClients Inventory module on this site with active products available to this household.");
+
+                    body = _orderLinks.CreateMessage(settings.FBName, settings.ClientOrderPage,
+                        new FoodOrderAccess(_alias.TenantId, _alias.SiteId, settings.OrderingModuleId, inventoryModuleId, ModuleId, visit.VisitId, client.FBClientsId));
+                }
+                else
+                {
+                    body = FBClientsOrderText.CreateMessage(settings.FBName, settings.ClientOrderPage, visit.VisitId, client.FBClientsId);
+                }
             }
             catch (ArgumentException ex)
             {

@@ -60,6 +60,7 @@ namespace GIBS.Module.FBClients.Models
             public const string TwilioAuthToken = "twilioAuthToken";
             public const string TwilioPhoneNumber = "twilioPhoneNumber";
             public const string ClientOrderPage = "clientOrderPage";
+            public const string OrderingModuleId = "orderingModuleId";
 
             // Christmas Toys
             public const string ShowXmasToys = "showXmasToys";
@@ -129,6 +130,7 @@ namespace GIBS.Module.FBClients.Models
         public string TwilioAuthToken { get; set; } = string.Empty;
         public string TwilioPhoneNumber { get; set; } = string.Empty;
         public string ClientOrderPage { get; set; } = string.Empty;
+        public int OrderingModuleId { get; set; }
 
         // Christmas Toys
         public bool ShowXmasToys { get; set; }
@@ -216,6 +218,7 @@ namespace GIBS.Module.FBClients.Models
             result.TwilioAuthToken = GetString(settings, Keys.TwilioAuthToken, string.Empty);
             result.TwilioPhoneNumber = GetString(settings, Keys.TwilioPhoneNumber, string.Empty);
             result.ClientOrderPage = GetString(settings, Keys.ClientOrderPage, string.Empty);
+            result.OrderingModuleId = int.TryParse(GetString(settings, Keys.OrderingModuleId, "0"), out var orderingModuleId) ? orderingModuleId : -1;
 
             result.ShowXmasToys = GetBool(settings, Keys.ShowXmasToys, false);
             result.XmasToysYear = GetString(settings, Keys.XmasToysYear, string.Empty);
@@ -288,6 +291,7 @@ namespace GIBS.Module.FBClients.Models
             settings[Keys.TwilioAuthToken] = TwilioAuthToken ?? string.Empty;
             settings[Keys.TwilioPhoneNumber] = TwilioPhoneNumber ?? string.Empty;
             settings[Keys.ClientOrderPage] = ClientOrderPage ?? string.Empty;
+            settings[Keys.OrderingModuleId] = OrderingModuleId.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
             settings[Keys.ShowXmasToys] = ShowXmasToys.ToString();
             settings[Keys.XmasToysYear] = XmasToysYear ?? string.Empty;

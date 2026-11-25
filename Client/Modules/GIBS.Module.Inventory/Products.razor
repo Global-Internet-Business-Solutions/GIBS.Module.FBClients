@@ -1,0 +1,106 @@
+@namespace GIBS.Module.FBClients.Inventory
+@using GIBS.Module.FBClients.Inventory.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inherits InventoryPageBase
+@inject IStringLocalizer<Products> Localizer
+
+<a href="@NavigateUrl()">@Localizer["Back to Inventory"]</a>
+<h3>@Localizer["Products"]</h3>
+@if (_catalog != null)
+{
+    <div class="d-flex flex-wrap gap-3 align-items-end mb-3">
+        @if (CanEdit)
+        {
+            <button type="button" class="btn btn-primary" disabled="@(Busy || _edit != null)" @onclick="AddProduct">@Localizer["Add Product"]</button>
+        }
+        <label>@Localizer["Search products"] <input class="form-control" @bind="_search" @bind:event="oninput" /></label>
+        <label>@Localizer["Category"]
+            <select class="form-select" @bind="_categoryFilter">
+                <option value="">@Localizer["All categories"]</option>
+                @foreach (var c in _catalog.Categories)
+                {
+                    <option value="@c.Id">@DisplayName(c.Name, c.Id)</option>
+                }
+            </select>
+        </label>
+        <label><input type="checkbox" @bind="_showInactive" /> @Localizer["Show inactive"]</label>
+    </div>
+    @if (_edit != null && CanEdit)
+    {
+        <EditForm Model="_edit" OnValidSubmit="SaveAsync" class="mb-4" @key="_edit.Id">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset disabled="@Busy">
+                <legend>@Localizer[_edit.Id == 0 ? "New Product" : "Edit Product"]</legend>
+                <div class="row g-2 mb-3">
+                    <label class="col-md-6">@Localizer["Product Name"] <InputText class="form-control" maxlength="100" @bind-Value="_edit.Name" /></label>
+                    <label class="col-md-6">@Localizer["Category"]
+                        <InputSelect class="form-select" @bind-Value="_edit.CategoryId">
+                            <option value="">@Localizer["Uncategorized"]</option>
+                            @foreach (var c in _catalog.Categories)
+                            {
+                                <option value="@c.Id">@DisplayName(c.Name, c.Id) @(!c.Active ? Localizer["(inactive)"] : null)</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label class="col-md-4">@Localizer["Case Price"] <InputNumber class="form-control" min="0" step="0.0001" @bind-Value="_edit.CasePrice" /></label>
+                    <label class="col-md-4">@Localizer["Count per Case"] <InputNumber class="form-control" min="0" @bind-Value="_edit.CaseCount" /></label>
+                    <label class="col-md-4">@Localizer["Weight per Case"] <InputNumber class="form-control" min="0" step="0.01" @bind-Value="_edit.CaseWeight" /></label>
+                    <label class="col-md-4">@Localizer["Order Limit"] <InputNumber class="form-control" min="0" max="100" @bind-Value="_edit.Limit" /></label>
+                    <label class="col-md-8">@Localizer["Household Limits"] <InputText class="form-control" maxlength="50" placeholder="4=3,5=4" @bind-Value="_edit.LimitQuantities" />
+                        <span class="form-text">@Localizer["Optional: household size=quantity, separated by commas."]</span>
+                    </label>
+                    <label class="col-12"><InputCheckbox @bind-Value="_edit.Active" /> @Localizer["Active"]</label>
+                </div>
+                <button class="btn btn-primary" type="submit">@Localizer["Save Product"]</button>
+                <button class="btn btn-secondary" type="button" @onclick="() => _edit = null">@Localizer["Cancel"]</button>
+            </fieldset>
+        </EditForm>
+    }
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead><tr><th>@Localizer["Product"]</th><th>@Localizer["Category"]</th><th>@Localizer["Case Price"]</th><th>@Localizer["Count"]</th><th>@Localizer["Weight"]</th><th>@Localizer["Order Limit"]</th><th>@Localizer["Status"]</th>@if (CanEdit) { <th>@Localizer["Actions"]</th> }</tr></thead>
+            <tbody>
+                @foreach (var entry in VisibleProducts)
+                {
+                    <tr @key="entry.Id">
+                        <td>@DisplayName(entry.Name, entry.Id)</td><td>@CategoryName(entry.CategoryId)</td><td>@entry.CasePrice?.ToString("0.00##")</td>
+                        <td>@entry.CaseCount</td><td>@entry.CaseWeight</td><td>@entry.Limit <small>@entry.LimitQuantities</small></td>
+                        <td>@Localizer[entry.Active ? "Active" : "Inactive"]</td>
+                        @if (CanEdit)
+                        {
+                            <td><button type="button" class="btn btn-sm btn-outline-primary" disabled="@(Busy || _edit != null)" @onclick="() => _edit = entry with { }">@Localizer["Edit"]</button></td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else if (Busy)
+{
+    <p role="status">@Localizer["Loading inventory..."]</p>
+}
+
+@code {
+    private InventoryCatalog _catalog;
+    private InventoryProduct _edit;
+    private string _search;
+    private int? _categoryFilter;
+    private bool _showInactive;
+
+    private IEnumerable<InventoryProduct> VisibleProducts => _catalog.Products.Where(x => (_showInactive || x.Active)
+        && (!_categoryFilter.HasValue || x.CategoryId == _categoryFilter)
+        && (string.IsNullOrWhiteSpace(_search) || (x.Name?.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase) ?? false)));
+
+    private string CategoryName(int? id) => id.HasValue ? DisplayName(_catalog.Categories.FirstOrDefault(c => c.Id == id)?.Name, id) : Localizer["Uncategorized"].Value;
+    private void AddProduct() => _edit = new() { CategoryId = _categoryFilter, CaseCount = 0, CasePrice = 0 };
+    protected override Task OnInitializedAsync() => RunAsync(ReloadAsync);
+    private async Task ReloadAsync() => _catalog = await Inventory.GetCatalogAsync(InventoryId);
+    private Task SaveAsync() => RunAsync(async () =>
+    {
+        await Inventory.SaveProductAsync(InventoryId, _edit);
+        _edit = null;
+        await ReloadAsync();
+    });
+}

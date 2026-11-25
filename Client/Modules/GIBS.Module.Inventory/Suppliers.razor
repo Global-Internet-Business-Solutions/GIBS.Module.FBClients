@@ -1,0 +1,80 @@
+@namespace GIBS.Module.FBClients.Inventory
+@using GIBS.Module.FBClients.Inventory.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inherits InventoryPageBase
+@inject IStringLocalizer<Suppliers> Localizer
+
+<a href="@NavigateUrl()">@Localizer["Back to Inventory"]</a>
+<h3>@Localizer["Suppliers"]</h3>
+@if (_catalog != null)
+{
+    <div class="d-flex gap-3 align-items-center mb-3">
+        @if (CanEdit)
+        {
+            <button type="button" class="btn btn-primary" disabled="@(Busy || _edit != null)" @onclick="() => _edit = new()">@Localizer["Add Supplier"]</button>
+        }
+        <label><input type="checkbox" @bind="_showInactive" /> @Localizer["Show inactive"]</label>
+    </div>
+    @if (_edit != null && CanEdit)
+    {
+        <EditForm Model="_edit" OnValidSubmit="SaveAsync" class="mb-4" @key="_edit.Id">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset disabled="@Busy">
+                <legend>@Localizer[_edit.Id == 0 ? "New Supplier" : "Edit Supplier"]</legend>
+                <div class="row g-2 mb-3">
+                    <label class="col-md-6">@Localizer["Supplier Name"] <InputText class="form-control" maxlength="50" @bind-Value="_edit.Name" /></label>
+                    <label class="col-md-6">@Localizer["Phone"] <InputText type="tel" class="form-control" maxlength="50" @bind-Value="_edit.Phone" /></label>
+                    <label class="col-12">@Localizer["Address"] <InputText class="form-control" maxlength="50" @bind-Value="_edit.Address" /></label>
+                    <label class="col-md-6">@Localizer["City"] <InputText class="form-control" maxlength="50" @bind-Value="_edit.City" /></label>
+                    <label class="col-md-3">@Localizer["State"] <InputText class="form-control" maxlength="50" @bind-Value="_edit.State" /></label>
+                    <label class="col-md-3">@Localizer["ZIP"] <InputText class="form-control" maxlength="50" @bind-Value="_edit.Zip" /></label>
+                    <label class="col-md-6">@Localizer["Sales Contact"] <InputText class="form-control" maxlength="50" @bind-Value="_edit.Contact" /></label>
+                    <label class="col-md-6">@Localizer["Contact Phone"] <InputText type="tel" class="form-control" maxlength="50" @bind-Value="_edit.ContactPhone" /></label>
+                    <label class="col-md-6"><InputCheckbox @bind-Value="_edit.GBFB" /> @Localizer["GBFB"]</label>
+                    <label class="col-md-6"><InputCheckbox @bind-Value="_edit.Active" /> @Localizer["Active"]</label>
+                </div>
+                <button class="btn btn-primary" type="submit">@Localizer["Save Supplier"]</button>
+                <button class="btn btn-secondary" type="button" @onclick="() => _edit = null">@Localizer["Cancel"]</button>
+            </fieldset>
+        </EditForm>
+    }
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <thead><tr><th>@Localizer["Supplier"]</th><th>@Localizer["Address"]</th><th>@Localizer["Phone"]</th><th>@Localizer["Sales Contact"]</th><th>@Localizer["GBFB"]</th><th>@Localizer["Status"]</th>@if (CanEdit) { <th>@Localizer["Actions"]</th> }</tr></thead>
+            <tbody>
+                @foreach (var entry in _catalog.Suppliers.Where(x => _showInactive || x.Active))
+                {
+                    <tr @key="entry.Id">
+                        <td>@DisplayName(entry.Name, entry.Id)</td><td>@entry.Address <br /> @entry.City @entry.State @entry.Zip</td>
+                        <td>@entry.Phone</td><td>@entry.Contact @entry.ContactPhone</td><td>@Localizer[entry.GBFB ? "Yes" : "No"]</td>
+                        <td>@Localizer[entry.Active ? "Active" : "Inactive"]</td>
+                        @if (CanEdit)
+                        {
+                            <td><button type="button" class="btn btn-sm btn-outline-primary" disabled="@(Busy || _edit != null)" @onclick="() => _edit = entry with { }">@Localizer["Edit"]</button></td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else if (Busy)
+{
+    <p role="status">@Localizer["Loading inventory..."]</p>
+}
+
+@code {
+    private InventoryCatalog _catalog;
+    private InventorySupplier _edit;
+    private bool _showInactive;
+
+    protected override Task OnInitializedAsync() => RunAsync(ReloadAsync);
+    private async Task ReloadAsync() => _catalog = await Inventory.GetCatalogAsync(InventoryId);
+    private Task SaveAsync() => RunAsync(async () =>
+    {
+        await Inventory.SaveSupplierAsync(InventoryId, _edit);
+        _edit = null;
+        await ReloadAsync();
+    });
+}

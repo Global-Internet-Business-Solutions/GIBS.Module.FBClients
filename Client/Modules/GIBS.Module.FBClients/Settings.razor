@@ -273,9 +273,15 @@
                     </div>
                 </div>
                 <div class="row mb-1 align-items-center">
-                    <Label Class="col-sm-3" For="txtClientOrderPage" HelpText="HTTPS URL prefix. The visit-client key is appended, as in the DNN module." ResourceKey="lblClientOrderPage" ResourceType="@resourceType">Client Order Page:</Label>
+                    <Label Class="col-sm-3" For="txtClientOrderPage" ResourceKey="lblClientOrderPage" ResourceType="@resourceType">Client Order Page:</Label>
                     <div class="col-sm-9">
                         <input id="txtClientOrderPage" type="text" class="form-control" @bind="@_settings.ClientOrderPage" />
+                    </div>
+                </div>
+                <div class="row mb-1 align-items-center">
+                    <Label Class="col-sm-3" For="orderingModuleId" ResourceKey="lblOrderingModuleId" ResourceType="@resourceType">Ordering Module ID:</Label>
+                    <div class="col-sm-9">
+                        <input id="orderingModuleId" type="number" min="0" class="form-control" @bind="@_settings.OrderingModuleId" />
                     </div>
                 </div>
             </div>

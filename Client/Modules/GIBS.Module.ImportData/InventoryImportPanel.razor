@@ -1,0 +1,210 @@
+@namespace GIBS.Module.FBClients.ImportData
+@using System.ComponentModel.DataAnnotations
+@using System.Net.Http
+@using System.Diagnostics
+@using Oqtane.Services
+@implements IAsyncDisposable
+@inject IImportDataService ImportData
+@inject ILogService LogService
+@inject IStringLocalizer<InventoryImportPanel> Localizer
+
+<section class="mt-4 mb-4" aria-label="@Localizer["Inventory and ordering import"]">
+    <h4>@Localizer["Separate inventory and ordering import"]</h4>
+    <p class="alert alert-warning">@Localizer["Isolated rehearsal only. This separate saved plan does not change the original client or turkey runs. Select tables per source; required inventory parents are automatically included. Visit items reuse verified clients and visits from the completed original rehearsal. No destination cleanup is performed."]</p>
+    @if (!string.IsNullOrEmpty(_notice))
+    {
+        <p class="alert @(_error ? "alert-danger" : "alert-info")" role="status">@_notice</p>
+    }
+    <fieldset disabled="@Busy">
+        <label class="form-label">@Localizer["DNN database"]
+            <select class="form-select" value="@_source" @onchange="SourceChanged">
+                <option value="">@Localizer["Select source"]</option>
+                @foreach (var source in Sources) { <option value="@source.Id">@source.Name</option> }
+            </select>
+        </label>
+        <label class="form-label">@Localizer["DNN inventory ModuleID"] <input class="form-control" type="number" min="1" @bind="_sourceInventory" /></label>
+        <label class="form-label">@Localizer["DNN client ModuleID"] <input class="form-control" type="number" min="1" @bind="_sourceClients" /></label>
+        <label class="form-label">@Localizer["Destination Inventory module"] <input class="form-control" type="number" min="1" @bind="_destinationInventory" /></label>
+        <label class="form-label">@Localizer["Destination FBClients module"] <input class="form-control" type="number" min="1" @bind="_destinationClients" /></label>
+        <label class="form-label">@Localizer["Run key"] <input class="form-control" @bind="_runKey" /></label>
+        <p class="form-text">@Localizer["Use 3inventory for the first inventory run. Do not change a started run's source, scope, selection or key to bypass a checkpoint. Future reviewed runs need a new numbered key and fresh selected destination data."]</p>
+        <button class="btn btn-outline-primary mb-2" type="button" disabled="@string.IsNullOrEmpty(_source)" @onclick="InspectAsync">@Localizer["Inspect inventory tables"]</button>
+        @if (_available != null)
+        {
+            <div class="table-responsive"><table class="table table-sm">
+                <thead><tr><th>@Localizer["Select"]</th><th>@Localizer["Table"]</th><th>@Localizer["Availability / dependencies"]</th></tr></thead>
+                <tbody>
+                @foreach (var table in InventoryImportSelection.Tables)
+                {
+                    var available = _available.Any(item => item.Name == table.Name && item.Available);
+                    var effective = EffectiveTables();
+                    var automatic = effective.Contains(table.Name) && !_selected.Contains(table.Name);
+                    <tr>
+                        <td><input type="checkbox" aria-label="@Localizer["Select {0}", table.Name]" checked="@effective.Contains(table.Name)" disabled="@(!CanEdit || !available || automatic)" @onchange="e => Toggle(table.Name, e)" /></td>
+                        <td><code>@table.Name</code> @if (automatic) { <span>@Localizer["Automatically included"]</span> }</td>
+                        <td>@Localizer[available ? "Visible" : "Missing or not visible"] @string.Join(", ", table.Dependencies)</td>
+                    </tr>
+                }
+                </tbody>
+            </table></div>
+        }
+        <button class="btn btn-primary" type="button" disabled="@(!CanEdit || _available == null || _selected.Count == 0)" @onclick="SaveAsync">@Localizer["Save inventory selection"]</button>
+        <button class="btn btn-outline-primary" type="button" disabled="@(_saved == null)" @onclick="PreflightAsync">@Localizer["Inventory preflight"]</button>
+        <button class="btn btn-outline-primary" type="button" disabled="@(_saved == null)" @onclick="ReconcileAsync">@Localizer["Inventory reconciliation"]</button>
+        <label class="form-label mt-3">@Localizer["100-row batches per request (max 25)"] <input class="form-control" type="number" min="1" max="25" @bind="_maxBatches" /></label>
+        <p class="form-text">@Localizer["A request processes one selected table, with batches and progress committed together. Empty tables advance the checkpoint. Repeat until complete; frozen-source verification may dominate elapsed time."]</p>
+        <button class="btn btn-danger" type="button" disabled="@(!CanEdit || _saved == null || _configuration?.RehearsalEnabled != true)" @onclick="RehearseAsync">@Localizer["Run/Resume Separate Inventory Rehearsal"]</button>
+    </fieldset>
+    @if (_configuration?.RehearsalEnabled != true)
+    {
+        <p class="form-text">@Localizer["The host must configure an isolated rehearsal InventoryModuleId in addition to the FBClients destination before writes are enabled."]</p>
+    }
+    @if (_working) { <p role="status">@Localizer["Working... Do not start another request."]</p> }
+    @if (_timer != null)
+    {
+        <p role="status">@Localizer["Elapsed request time: {0} minutes {1} seconds (verification and network included; not cumulative).", (long)_timer.Elapsed.TotalMinutes, _timer.Elapsed.Seconds]</p>
+    }
+    @if (_progress != null)
+    {
+        <p class="alert alert-info">@Localizer["Inventory run {0}: imported rows {1}; tables completed {2}/{3}; run complete: {4}.", _saved.RunKey, _progress.ImportedRows.ToString("N0"), _progress.TablesCompleted, _progress.TotalTables, _progress.Completed]</p>
+    }
+    @if (_report != null)
+    {
+        <h5>@Localizer[_report.Reconciliation ? "Inventory Reconciliation Results" : "Inventory Preflight Results"]</h5>
+        <p>@Localizer["Source: {0}; inventory scope {1} -> {2}; client scope {3} -> {4}; run {5}.", _report.Plan.Source, _report.Plan.SourceInventoryModuleId, _report.Plan.DestinationInventoryModuleId, _report.Plan.SourceClientsModuleId, _report.Plan.DestinationClientsModuleId, _report.Plan.RunKey]</p>
+        @foreach (var issue in _report.Issues)
+        {
+            <p class="alert @(issue.Severity == "Blocker" ? "alert-danger" : "alert-warning")"><strong>@issue.Severity</strong> <code>@issue.Table</code> @issue.Message</p>
+        }
+        @foreach (var result in _report.Tables)
+        {
+            var table = result.Counts;
+            <details open class="mb-2">
+                <summary><code>@table.Source</code> -> <code>@table.Destination</code></summary>
+                @if (!result.Compared) { <p class="alert alert-danger">@Localizer["Not compared: resolve table validation blockers first."]</p> }
+                else
+                {
+                    <p>@Localizer["Scoped source rows: {0}; destination module rows: {1}; matched keys: {2}", table.SourceRows.ToString("N0"), table.DestinationRows.ToString("N0"), table.MatchedKeys.ToString("N0")]</p>
+                    <p>@Localizer["Missing: {0}; extra: {1}; wrong/unknown owner: {2}; wrong parent: {3}; mapped-value/audit mismatches: {4}", table.MissingKeys, table.ExtraKeys, table.WrongOwner, table.WrongParent, table.MappedValueMismatchRows]</p>
+                    <p>@Localizer["Tenant-wide unowned destination rows: {0}; source-wide parentless rows: {1}", table.UnownedDestinationRows, table.SourceWideOrphans]</p>
+                }
+                <details><summary>@Localizer["Field mappings"]</summary><table class="table table-sm"><thead><tr><th>@Localizer["Source"]</th><th>@Localizer["Destination"]</th><th>@Localizer["Rule"]</th><th>@Localizer["Invalid rows"]</th></tr></thead><tbody>
+                    @foreach (var field in result.Fields) { <tr><td>@field.Source</td><td>@field.Destination</td><td>@field.Rule</td><td>@(field.InvalidRows?.ToString("N0") ?? Localizer["Not checked"].Value)</td></tr> }
+                </tbody></table></details>
+            </details>
+        }
+    }
+</section>
+
+@code {
+    [Parameter] public int ModuleId { get; set; }
+    [Parameter] public List<ImportSource> Sources { get; set; } = new();
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<bool> BusyChanged { get; set; }
+    private InventoryImportConfiguration _configuration;
+    private InventoryImportPlan _saved;
+    private List<ImportSourceTable> _available;
+    private InventoryImportReport _report;
+    private ImportBatchRunReport _progress;
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private string _source, _notice, _runKey = InventoryImportSelection.RunKey;
+    private int _sourceInventory, _sourceClients, _destinationInventory, _destinationClients, _maxBatches = 1;
+    private bool _working, _error;
+    private Stopwatch _timer;
+    private readonly System.Threading.CancellationTokenSource _disposed = new();
+    private Task _ticks;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RunAsync(async () =>
+        {
+            _configuration = await ImportData.GetInventoryConfigurationAsync(ModuleId);
+            _saved = _configuration.Plan;
+            if (_saved != null)
+            {
+                _source = _saved.Source; _sourceInventory = _saved.SourceInventoryModuleId; _sourceClients = _saved.SourceClientsModuleId;
+                _destinationInventory = _saved.DestinationInventoryModuleId; _destinationClients = _saved.DestinationClientsModuleId; _runKey = _saved.RunKey;
+                _selected.UnionWith(_saved.Tables);
+                _available = await ImportData.InspectInventoryAsync(ModuleId, _source);
+            }
+            else
+            {
+                if (Sources.Count == 1) _source = Sources[0].Id;
+                _destinationInventory = _configuration.RehearsalInventoryModuleId ?? 0;
+            }
+        });
+    }
+
+    private void SourceChanged(ChangeEventArgs args) { _source = args.Value?.ToString(); _available = null; _selected.Clear(); _report = null; _progress = null; }
+    private void Toggle(string name, ChangeEventArgs args) { if (args.Value is true) _selected.Add(name); else _selected.Remove(name); _report = null; _progress = null; }
+    private List<string> EffectiveTables() => InventoryImportSelection.ExpandTables(_selected);
+    private InventoryImportPlan CurrentPlan() => InventoryImportSelection.Normalize(new(_source, _sourceInventory, _sourceClients, _destinationInventory, _destinationClients, _selected.ToList(), _runKey));
+    private void RequireSaved()
+    {
+        var current = CurrentPlan();
+        if (_saved == null || current.Source != _saved.Source || current.RunKey != _saved.RunKey || current.SourceInventoryModuleId != _saved.SourceInventoryModuleId
+            || current.SourceClientsModuleId != _saved.SourceClientsModuleId || current.DestinationInventoryModuleId != _saved.DestinationInventoryModuleId
+            || current.DestinationClientsModuleId != _saved.DestinationClientsModuleId || !current.Tables.SequenceEqual(_saved.Tables))
+            throw new ValidationException(Localizer["Save the inventory changes or restore the saved plan before running reports or rehearsal."]);
+    }
+    private Task InspectAsync() => RunAsync(async () => { _available = await ImportData.InspectInventoryAsync(ModuleId, _source); _report = null; });
+    private Task SaveAsync() => RunAsync(async () =>
+    {
+        var plan = CurrentPlan();
+        await ImportData.SaveInventoryPlanAsync(ModuleId, plan);
+        _saved = plan; _report = null; _progress = null;
+        _notice = Localizer["Inventory selection saved with required dependencies. No data was imported."];
+    });
+    private Task PreflightAsync() => RunAsync(async () => { RequireSaved(); _report = null; _report = await ImportData.InventoryPreflightAsync(ModuleId); });
+    private Task ReconcileAsync() => RunAsync(async () => { RequireSaved(); _report = null; _report = await ImportData.InventoryReconcileAsync(ModuleId); });
+    private Task RehearseAsync() => RunAsync(async () =>
+    {
+        RequireSaved();
+        if (_maxBatches is < 1 or > 25) throw new ValidationException(Localizer["Choose 1 to 25 batches."]);
+        _progress = null;
+        _progress = await ImportData.RunInventoryRehearsalAsync(ModuleId, new(_maxBatches));
+    });
+    private async Task RunAsync(Func<Task> action)
+    {
+        if (Busy || _working) return;
+        _working = true; _notice = null; _error = false; _timer = Stopwatch.StartNew();
+        await BusyChanged.InvokeAsync(true);
+        using var ticksCancellation = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(_disposed.Token);
+        _ticks = TickAsync(ticksCancellation.Token);
+        try { await action(); }
+        catch (UnauthorizedAccessException) { _error = true; _notice = Localizer["Administrator and module permissions are required."]; }
+        catch (Exception ex) when (ex is ValidationException or ImportDataException) { _error = true; _notice = ex.Message; }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or TimeoutException or OperationCanceledException)
+        {
+            await LogService.Log(null, ModuleId, null, "Module", "InventoryImport", Oqtane.Enums.LogFunction.Other,
+                Oqtane.Shared.LogLevel.Error, null, "Inventory import request failed for module {ModuleId}: {ErrorType}", ModuleId, ex.GetType().Name);
+            _error = true; _notice = Localizer["The request failed. Check server logs and confirm the request has stopped before resuming; do not delete checkpoints."];
+        }
+        finally
+        {
+            _timer.Stop(); _working = false;
+            await ticksCancellation.CancelAsync();
+            await _ticks;
+            await BusyChanged.InvokeAsync(false);
+        }
+    }
+    private async Task TickAsync(System.Threading.CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (_working)
+            {
+                await Task.Delay(1000, cancellationToken);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+    public async ValueTask DisposeAsync()
+    {
+        await _disposed.CancelAsync();
+        if (_ticks != null) await _ticks;
+        _disposed.Dispose();
+    }
+}

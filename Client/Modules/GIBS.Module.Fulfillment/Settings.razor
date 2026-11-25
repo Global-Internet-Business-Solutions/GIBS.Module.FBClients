@@ -1,0 +1,63 @@
+@namespace GIBS.Module.FBClients.Fulfillment
+@using System.Globalization
+@using GIBS.Module.FBClients.Inventory
+@inherits ModuleBase
+@implements ISettingsControl
+@inject ISettingService SettingService
+@inject IStringLocalizer<Settings> Localizer
+
+<fieldset disabled="@(!_ready)">
+    <label class="d-block mb-3">@Localizer["FBClients Module ID"]
+        <input type="number" min="1" class="form-control" @bind="_clientsId" />
+        <span class="form-text">@Localizer["The FBClients module whose visits this queue will show."]</span>
+    </label>
+    <label class="d-block mb-3">@Localizer["Inventory Module ID"]
+        <input type="number" min="1" class="form-control" @bind="_inventoryId" />
+        <span class="form-text">@Localizer["Use the same Inventory module as Ordering on this site."]</span>
+    </label>
+    <label class="d-block mb-3">@Localizer["Default Service Location"]
+        <input class="form-control" maxlength="50" @bind="_location" />
+        <span class="form-text">@Localizer["Enter the saved visit location, or leave blank for all locations."]</span>
+    </label>
+    <label class="form-check"><input type="checkbox" class="form-check-input" @bind="_showCategories" /> @Localizer["Show categories on the packing checklist"]</label>
+    <label class="form-check"><input type="checkbox" class="form-check-input" @bind="_twoColumns" /> @Localizer["Use two checklist columns on wider screens"]</label>
+    <label class="form-check"><input type="checkbox" class="form-check-input" @bind="_pickupTexts" /> @Localizer["Enable pickup texts using the linked FBClients Twilio settings"]</label>
+</fieldset>
+
+@code {
+    public override string Title => "Fulfillment Settings";
+    private int? _clientsId, _inventoryId;
+    private string _location;
+    private bool _ready, _showCategories, _twoColumns, _pickupTexts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settings = await SettingService.GetModuleSettingsAsync(ModuleState.ModuleId);
+        int? ReadId(string name) => int.TryParse(SettingService.GetSetting(settings, name, ""), NumberStyles.None,
+            CultureInfo.InvariantCulture, out var id) ? id : null;
+        bool ReadBool(string name, bool fallback) => bool.TryParse(SettingService.GetSetting(settings, name, ""), out var value) ? value : fallback;
+        _clientsId = ReadId(FulfillmentModule.ClientsModuleId);
+        _inventoryId = ReadId(InventoryModule.OrderingSettingName);
+        _location = SettingService.GetSetting(settings, FulfillmentModule.DefaultLocation, "");
+        _showCategories = ReadBool(FulfillmentModule.ShowCategories, true);
+        _twoColumns = ReadBool(FulfillmentModule.TwoColumns, false);
+        _pickupTexts = ReadBool(FulfillmentModule.PickupTexts, false);
+        _ready = true;
+    }
+
+    public async Task UpdateSettings()
+    {
+        if (!_ready) throw new InvalidOperationException(Localizer["Fulfillment settings have not loaded."]);
+        if (_clientsId is null or <= 0 || _inventoryId is null or <= 0)
+            throw new InvalidOperationException(Localizer["Enter positive FBClients and Inventory module IDs."]);
+        if (_location?.Length > 50) throw new InvalidOperationException(Localizer["Use a location of 50 characters or fewer."]);
+        var settings = await SettingService.GetModuleSettingsAsync(ModuleState.ModuleId);
+        settings = SettingService.SetSetting(settings, FulfillmentModule.ClientsModuleId, _clientsId.Value.ToString(CultureInfo.InvariantCulture));
+        settings = SettingService.SetSetting(settings, InventoryModule.OrderingSettingName, _inventoryId.Value.ToString(CultureInfo.InvariantCulture));
+        settings = SettingService.SetSetting(settings, FulfillmentModule.DefaultLocation, _location?.Trim() ?? "");
+        settings = SettingService.SetSetting(settings, FulfillmentModule.ShowCategories, _showCategories.ToString());
+        settings = SettingService.SetSetting(settings, FulfillmentModule.TwoColumns, _twoColumns.ToString());
+        settings = SettingService.SetSetting(settings, FulfillmentModule.PickupTexts, _pickupTexts.ToString());
+        await SettingService.UpdateModuleSettingsAsync(settings, ModuleState.ModuleId);
+    }
+}

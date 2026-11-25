@@ -1,0 +1,320 @@
+@namespace GIBS.Module.FBClients.ImportData
+@using System.ComponentModel.DataAnnotations
+@using System.Net.Http
+@using Oqtane.Security
+@inherits ModuleBase
+@inject IImportDataService ImportData
+@inject IStringLocalizer<Index> Localizer
+
+<h3>@Localizer["DNN Client Data Import"]</h3>
+@if (!IsAdministrator)
+{
+    <p class="alert alert-warning">@Localizer["Only site administrators can access this module."]</p>
+}
+else
+{
+    <p>@Localizer["Inspect a configured DNN source, save a table selection, and run read-only preflight or reconciliation. A bounded rehearsal is available only when explicitly enabled by the host for its configured isolated destination."]</p>
+    <p>@Localizer["Rehearsal writes client records. Confirm the destination is disposable and isolated before proceeding. Inventory and visit order items are not included; merged tables are not supported."]</p>
+    @if (_notice != null) { <p class="alert @(_error ? "alert-warning" : "alert-success")" role="status">@_notice</p> }
+    @if (_busy)
+    {
+        <div class="text-success fs-3" role="status">@Localizer["Working..."] - TIMER</div>
+    }
+    @if (_configuration != null)
+    {
+        @if (_configuration.Sources.Count == 0)
+        {
+            <p class="alert alert-warning">@Localizer["No DNN source is configured. Add a connection in Import Data settings or ask the host administrator to configure a source."]</p>
+        }
+        else
+        {
+            <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                <label>@Localizer["DNN database"]
+                    <select class="form-select" value="@_source" disabled="@_busy" @onchange="SourceChanged">
+                        <option value="">@Localizer["Select a source"]</option>
+                        @foreach (var entry in _configuration.Sources) { <option value="@entry.Id">@entry.Name</option> }
+                    </select>
+                </label>
+                <button type="button" class="btn btn-primary" disabled="@(_busy || string.IsNullOrEmpty(_source))" @onclick="InspectAsync">@Localizer["Connect and Inspect Tables"]</button>
+                <label>@Localizer["DNN source ModuleID"] <input type="number" min="1" class="form-control" @bind="_sourceModuleId" @bind:after="ClearReport" disabled="@(_busy || !CanEdit)" /></label>
+            </div>
+            @if (_savedPlan != null)
+            {
+                <p>@Localizer["Saved selection: {0} table(s).", _savedPlan.Tables.Count] @if (!_configuration.Sources.Any(x => x.Id == _savedPlan.Source)) { <span>@Localizer["Its source is no longer configured for this site."]</span> }</p>
+                <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+                    <label>@Localizer["Destination FBClients Module ID"] <input type="number" min="1" class="form-control" @bind="_destinationId" @bind:after="ClearReport" disabled="@_busy" /></label>
+                    <label><input type="checkbox" @bind="_includeTurkey" @bind:after="ClearReport" disabled="@_busy" /> @Localizer["Include turkey recipients in reports (does not change the saved selection)"]</label>
+                    <button type="button" class="btn btn-outline-primary" disabled="@_busy" @onclick="PreflightAsync">@Localizer["Run Preflight"]</button>
+                    <button type="button" class="btn btn-outline-primary" disabled="@_busy" @onclick="ReconcileAsync">@Localizer["Run Reconciliation"]</button>
+                    @if (CanEdit && _configuration.RehearsalEnabled && _configuration.RehearsalDestinationModuleId.HasValue)
+                    {
+                        <label>@Localizer["100-row batches per request (max 25)"] <input type="number" min="1" max="25" class="form-control" @bind="_maxBatches" disabled="@_busy" /></label>
+                        <p class="form-text">@Localizer["Frozen Azure copies commit these batches as one chunk of up to 2,500 rows from the current table. A failure rolls back the whole chunk; previously committed progress remains."]</p>
+                        <button type="button" class="btn btn-danger" disabled="@(_busy || _destinationId != _configuration.RehearsalDestinationModuleId)" @onclick="RunRehearsalAsync">@Localizer["Run/Resume Isolated Rehearsal"]</button>
+                        <button type="button" class="btn btn-danger" disabled="@(_busy || _destinationId != _configuration.RehearsalDestinationModuleId)" @onclick="RunTurkeyRehearsalAsync">@Localizer["Run/Resume Separate Turkey Rehearsal"]</button>
+                        <p class="form-text">@Localizer["Finish the original rehearsal first. The separate turkey rehearsal requires its unchanged source, saved plan, administrator, and completed checkpoint; do not add turkey to the saved selection."]</p>
+                    }
+                    else
+                    {
+                        <p class="alert alert-warning">@Localizer["Rehearsal is unavailable. A host administrator must enable it, configure the isolated destination, and grant module Edit permission."]</p>
+                    }
+                    @if (CanEdit)
+                    {
+                        <button type="button" class="btn btn-outline-secondary" disabled="@_busy" @onclick="SaveScopeAsync">@Localizer["Save Source ModuleID"]</button>
+                    }
+                </div>
+                @if (_savedPlan.SourceModuleId is null or <= 0)
+                {
+                    <p class="alert alert-warning">@Localizer["This saved selection has no DNN ModuleID. Enter 412 above, then click Save Source ModuleID before running preflight."]</p>
+                }
+                <p class="form-text">@Localizer["Reports use the saved source, table selection, and DNN ModuleID, not unsaved edits; the turkey report option adds that table without changing the saved selection. Saved DNN ModuleID: {0}. Child history is scoped through its client; rows without a client are reported separately and cannot be assigned to this module.", _savedPlan.SourceModuleId?.ToString() ?? "Not set"]</p>
+                @if (_rehearsal != null)
+                {
+                    <p class="alert alert-info" role="status">@Localizer["Rehearsal checkpoint progress. Imported rows: {0}; completed tables: {1}/{2}; run complete: {3}.", _rehearsal.ImportedRows.ToString("N0"), _rehearsal.TablesCompleted, _rehearsal.TotalTables, _rehearsal.Completed]</p>
+                }
+                @if (_turkeyRehearsal != null)
+                {
+                    <p class="alert alert-info" role="status">@Localizer["Separate turkey rehearsal progress. Imported rows: {0}; run complete: {1}.", _turkeyRehearsal.ImportedRows.ToString("N0"), _turkeyRehearsal.Completed]</p>
+                }
+                @if (_rehearsalElapsed.HasValue)
+                {
+                    <p class="form-text" role="status">@Localizer["Elapsed rehearsal request time: {0} minutes {1} seconds (includes verification and network time; not cumulative run time).", (long)_rehearsalElapsed.Value.TotalMinutes, _rehearsalElapsed.Value.Seconds]</p>
+                }
+            }
+        }
+    }
+    @if (_report != null)
+    {
+        <section class="mb-4" aria-label="@Localizer["Preflight results"]">
+            <h4>@Localizer["Preflight Results"]</h4>
+            <p>@Localizer["Source: {0}; DNN ModuleID: {1}; destination FBClients module: {2}", _report.Source, _report.SourceModuleId, _report.DestinationModuleId]</p>
+            <div class="alert alert-warning">@Localizer["These results are a point-in-time check, not authorization for a production import. Archive IDs map to LegacyRecordId; ArchiveId is generated and archive collisions are not checked. The separate rehearsal action is restricted to the host-configured isolated destination."]</div>
+            @foreach (var issue in _report.Issues)
+            {
+                <p class="alert @(issue.Severity == "Blocker" ? "alert-danger" : "alert-warning")"><strong>@issue.Severity &nbsp;</strong> @if (!string.IsNullOrEmpty(issue.Table)) { <code>@issue.Table</code> } &nbsp; @issue.Message</p>
+            }
+            <div class="table-responsive"><table class="table table-sm table-striped">
+                <thead><tr><th>@Localizer["DNN table"]</th><th>@Localizer["Oqtane table"]</th><th>@Localizer["ID mapping"]</th><th>@Localizer["Source rows"]</th><th>@Localizer["Existing ID collisions"]</th></tr></thead>
+                <tbody>@foreach (var table in _report.Tables)
+                {
+                    <tr><td>@table.Source</td><td>@table.Destination</td><td>@table.SourceKey → @table.DestinationKey</td><td>@(table.SourceRows?.ToString("N0") ?? "Not checked")</td><td>@(table.Collisions?.ToString("N0") ?? "Not checked")</td></tr>
+                }</tbody>
+            </table></div>
+            @foreach (var table in _report.Tables.Where(x => x.Fields != null))
+            {
+                <details class="mb-3">
+                    <summary>@Localizer["Field mappings and validation: {0}", table.Source]</summary>
+                    <div class="table-responsive"><table class="table table-sm">
+                        <thead><tr><th>@Localizer["Source field"]</th><th>@Localizer["Destination field"]</th><th>@Localizer["Mapping rule"]</th><th>@Localizer["Invalid scoped rows"]</th></tr></thead>
+                        <tbody>@foreach (var field in table.Fields)
+                        {
+                            <tr><td>@field.Source</td><td>@field.Destination</td><td>@field.Rule</td><td>@(field.InvalidRows?.ToString("N0") ?? Localizer["Not value-checked; see rule and issues"].Value)</td></tr>
+                        }</tbody>
+                    </table></div>
+                </details>
+            }
+        </section>
+    }
+    @if (_reconciliation != null)
+    {
+        <section class="mb-4" aria-label="@Localizer["Reconciliation results"]">
+            <h4>@Localizer["Reconciliation Results"]</h4>
+            <p>@Localizer["Source: {0}; DNN ModuleID: {1}; destination FBClients module: {2}", _reconciliation.Source, _reconciliation.SourceModuleId, _reconciliation.DestinationModuleId]</p>
+            <p class="alert alert-warning">@Localizer["Read-only, point-in-time comparison of IDs, relationships, and mapped values. It does not prove import provenance or trigger side effects. Use a consistent source snapshot and repeat after any changes. Import is not enabled."]</p>
+            @foreach (var table in _reconciliation.Tables)
+            {
+                <details class="mb-2" open>
+                    <summary><code>@table.Source</code> → <code>@table.Destination</code></summary>
+                    <ul>
+                        <li>@Localizer["Scoped source rows: {0}; destination module rows: {1}; matched keys: {2}", table.SourceRows.ToString("N0"), table.DestinationRows.ToString("N0"), table.MatchedKeys.ToString("N0")]</li>
+                        <li>@Localizer["Missing keys: {0}; extra destination keys: {1}; keys with wrong or unknown destination owner: {2}", table.MissingKeys.ToString("N0"), table.ExtraKeys.ToString("N0"), table.WrongOwner.ToString("N0")]</li>
+                        <li>@Localizer["Matched keys with wrong client parent: {0}; mismatched Christmas family or legacy family link: {1}; conflicting source family links: {2}", table.WrongParent.ToString("N0"), table.WrongFamily.ToString("N0"), table.ConflictingSourceFamily.ToString("N0")]</li>
+                        <li>@Localizer["Matched destination rows with mapped-value or generated-audit mismatches: {0}", table.MappedValueMismatchRows.ToString("N0")]</li>
+                        <li>@Localizer["Destination rows without a determinable module (tenant-wide): {0}", table.UnownedDestinationRows.ToString("N0")]</li>
+                        @if (table.SourceWideOrphans.HasValue)
+                        {
+                            <li>@Localizer["Source-wide rows without a client (not attributable to this module): {0}", table.SourceWideOrphans.Value.ToString("N0")] @if (table.Source == "GIBS_FBxMas") { <span>@Localizer["These Christmas rows are approved exclusions; retain the DNN backup."]</span> } else if (table.Source == "GIBS_FBTurkeyRecipients" && _reconciliation.SourceModuleId == 412 && table.SourceWideOrphans.Value == 96) { <span>@Localizer["These 96 turkey rows are approved exclusions for the reviewed source; retain the DNN backup. Verify the source snapshot matches the reviewed data."]</span> } else if (table.SourceWideOrphans.Value > 0) { <span>@Localizer["These are not approved exclusions and require ownership review."]</span> }</li>
+                        }
+                    </ul>
+                </details>
+            }
+        </section>
+    }
+    @if (_tables != null)
+    {
+        <p>@Localizer["Only recognized client and history tables in dbo are listed. Unavailable means missing or not visible to the source account."]</p>
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead><tr><th>@Localizer["Select"]</th><th>@Localizer["DNN table"]</th><th>@Localizer["Data"]</th><th>@Localizer["Availability"]</th></tr></thead>
+                <tbody>
+                    @foreach (var table in _tables)
+                    {
+                        <tr @key="table.Name">
+                            <td><input type="checkbox" aria-label="@Localizer["Select {0}", table.Name]" checked="@_selected.Contains(table.Name)" disabled="@(_busy || !table.Available || !CanEdit)" @onchange="e => Toggle(table.Name, e)" /></td>
+                            <td><code>dbo.@table.Name</code></td><td>@Localizer[table.Description]</td><td>@Localizer[table.Available ? "Visible" : "Missing or not visible"]</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (CanEdit)
+        {
+            <button type="button" class="btn btn-primary" disabled="@(_busy || _selected.Count == 0 || _sourceModuleId is null or <= 0)" @onclick="SaveAsync">@Localizer["Save Table Selection"]</button>
+        }
+        else { <p>@Localizer["Edit permission on this module is required to save a selection."]</p> }
+    }
+    @if (_configuration != null)
+    {
+        <InventoryImportPanel ModuleId="@ModuleState.ModuleId" Sources="@_configuration.Sources" CanEdit="@CanEdit" @bind-Busy="_busy" />
+    }
+}
+
+@code {
+    public override SecurityAccessLevel SecurityAccessLevel => SecurityAccessLevel.Admin;
+    public override bool? Prerender => false;
+    private bool IsAdministrator => PageState.User?.IsAuthenticated == true && UserSecurity.IsAuthorized(PageState.User, RoleNames.Admin);
+    private bool CanEdit => IsAdministrator && IsAuthorizedPermission(PermissionNames.Edit);
+    private ImportDataConfiguration _configuration;
+    private ImportDataPlan _savedPlan;
+    private List<ImportSourceTable> _tables;
+    private ImportPreflightReport _report;
+    private ImportReconciliationReport _reconciliation;
+    private ImportBatchRunReport _rehearsal;
+    private ImportBatchRunReport _turkeyRehearsal;
+    private bool _includeTurkey;
+    private int? _destinationId;
+    private int? _sourceModuleId;
+    private int _maxBatches = 1;
+    private TimeSpan? _rehearsalElapsed;
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private string _source, _notice;
+    private bool _busy, _error;
+
+    protected override Task OnInitializedAsync() => IsAdministrator ? RunAsync(async () =>
+    {
+        _configuration = await ImportData.GetConfigurationAsync(ModuleState.ModuleId);
+        _savedPlan = _configuration.Plan;
+        _sourceModuleId = _savedPlan?.SourceModuleId;
+        if (_savedPlan != null && _configuration.Sources.Any(x => x.Id == _savedPlan.Source)) _source = _savedPlan.Source;
+        else if (_configuration.Sources.Count == 1) _source = _configuration.Sources[0].Id;
+    }) : Task.CompletedTask;
+
+    private void SourceChanged(ChangeEventArgs args)
+    {
+        _source = args.Value?.ToString();
+        _tables = null;
+        ClearReport();
+        _selected.Clear();
+        _notice = null;
+    }
+
+    private Task InspectAsync() => RunAsync(async () =>
+    {
+        _tables = null;
+        ClearReport();
+        _selected.Clear();
+        _tables = await ImportData.InspectAsync(ModuleState.ModuleId, _source);
+        if (_savedPlan?.Source == _source)
+            foreach (var table in _tables.Where(x => x.Available && _savedPlan.Tables.Contains(x.Name))) _selected.Add(table.Name);
+    });
+
+    private void Toggle(string name, ChangeEventArgs args)
+    {
+        ClearReport();
+        if (args.Value is true) _selected.Add(name); else _selected.Remove(name);
+    }
+
+    private void ClearReport() { _report = null; _reconciliation = null; _rehearsal = null; _turkeyRehearsal = null; _rehearsalElapsed = null; }
+
+    private Task SaveAsync() => RunAsync(async () =>
+    {
+        var plan = new ImportDataPlan(_source, _tables.Where(x => _selected.Contains(x.Name)).Select(x => x.Name).ToList(), _sourceModuleId);
+        await ImportData.SavePlanAsync(ModuleState.ModuleId, plan);
+        _savedPlan = plan;
+        ClearReport();
+        _notice = Localizer["Table selection saved. No data has been imported."];
+    });
+
+    private Task SaveScopeAsync() => RunAsync(async () =>
+    {
+        if (_sourceModuleId is null or <= 0)
+            throw new ValidationException(Localizer["Enter a positive DNN source ModuleID, such as 412."]);
+        if (_savedPlan == null || _savedPlan.Source != _source)
+            throw new ValidationException(Localizer["Select the saved source before updating its ModuleID. To change sources, inspect tables and save a new selection."]);
+        ClearReport();
+        var plan = _savedPlan with { SourceModuleId = _sourceModuleId };
+        await ImportData.SavePlanAsync(ModuleState.ModuleId, plan);
+        _savedPlan = plan;
+        _notice = Localizer["DNN source ModuleID saved. The saved table selection is unchanged. You can now run preflight."];
+    });
+
+    private Task PreflightAsync() => RunAsync(async () =>
+    {
+        _report = null;
+        if (_destinationId is null or <= 0)
+            throw new ValidationException(Localizer["Enter the destination FBClients Module ID, such as 33."]);
+        if (_savedPlan?.SourceModuleId is null or <= 0)
+            throw new ValidationException(Localizer["Enter the DNN source ModuleID and click Save Source ModuleID before running preflight."]);
+        if (_savedPlan.Source != _source || _savedPlan.SourceModuleId != _sourceModuleId)
+            throw new ValidationException(Localizer["The source or ModuleID differs from the saved selection. Save your changes or restore the saved values before running preflight."]);
+        _report = await ImportData.PreflightAsync(ModuleState.ModuleId, new ImportPreflightRequest(_destinationId.Value, _includeTurkey));
+    });
+
+    private Task ReconcileAsync() => RunAsync(async () =>
+    {
+        _reconciliation = null;
+        if (_destinationId is null or <= 0)
+            throw new ValidationException(Localizer["Enter the destination FBClients Module ID, such as 33."]);
+        if (_savedPlan?.SourceModuleId is null or <= 0)
+            throw new ValidationException(Localizer["Enter the DNN source ModuleID and click Save Source ModuleID before running reconciliation."]);
+        if (_savedPlan.Source != _source || _savedPlan.SourceModuleId != _sourceModuleId)
+            throw new ValidationException(Localizer["The source or ModuleID differs from the saved selection. Save your changes or restore the saved values before running reconciliation."]);
+        _reconciliation = await ImportData.ReconcileAsync(ModuleState.ModuleId, new ImportPreflightRequest(_destinationId.Value, _includeTurkey));
+    });
+
+    private Task RunRehearsalAsync() => RunRehearsalCoreAsync(false);
+    private Task RunTurkeyRehearsalAsync() => RunRehearsalCoreAsync(true);
+
+    private Task RunRehearsalCoreAsync(bool turkeyOnly) => RunAsync(async () =>
+    {
+        _rehearsal = null;
+        _turkeyRehearsal = null;
+        _rehearsalElapsed = null;
+        if (_destinationId is null or <= 0 || _destinationId != _configuration.RehearsalDestinationModuleId)
+            throw new ValidationException(Localizer["The rehearsal destination must match the host-configured isolated module."]);
+        if (_maxBatches is < 1 or > 25)
+            throw new ValidationException(Localizer["Choose between 1 and 25 batches per request."]);
+        if (_savedPlan?.SourceModuleId is null or <= 0 || _savedPlan.Source != _source || _savedPlan.SourceModuleId != _sourceModuleId)
+            throw new ValidationException(Localizer["Save and select the source plan and DNN ModuleID before running the rehearsal."]);
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var request = new ImportRehearsalRequest(_destinationId.Value, _maxBatches);
+            if (turkeyOnly) _turkeyRehearsal = await ImportData.RunTurkeyRehearsalBatchAsync(ModuleState.ModuleId, request);
+            else _rehearsal = await ImportData.RunRehearsalBatchAsync(ModuleState.ModuleId, request);
+        }
+        finally
+        {
+            timer.Stop();
+            _rehearsalElapsed = timer.Elapsed;
+        }
+    });
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        if (_busy || !IsAdministrator) return;
+        _busy = true;
+        _notice = null;
+        _error = false;
+        try { await action(); }
+        catch (UnauthorizedAccessException) { _error = true; _notice = Localizer["Administrator and module permissions are required for this action."]; }
+        catch (Exception ex) when (ex is ValidationException or ImportDataException) { _error = true; _notice = ex.Message; }
+        catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or System.Data.Common.DbException or TimeoutException or OperationCanceledException)
+        {
+            await logger.LogError(Oqtane.Enums.LogFunction.Other, "Import preparation failed for module {ModuleId}: {ErrorType}", ModuleState.ModuleId, ex.GetType().Name);
+            _error = true;
+            _notice = Localizer["The operation failed. Check the server logs and try again."];
+        }
+        finally { _busy = false; }
+    }
+}

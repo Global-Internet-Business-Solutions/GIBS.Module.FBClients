@@ -1,0 +1,159 @@
+@namespace GIBS.Module.FBClients.Inventory.Components
+@using GIBS.Module.FBClients.Inventory.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inherits InventoryPageBase
+@inject IStringLocalizer<InvoiceDetails> Localizer
+
+<a href="@NavigateUrl(InventoryId, nameof(Invoices))">@Localizer["Back to Invoices"]</a>
+@if (_details != null)
+{
+    <h3>@Localizer["Invoice {0}", DisplayName(_details.Invoice.Number, _details.Invoice.Id)]</h3>
+    <p>@_details.Invoice.Date?.ToShortDateString() | @DisplayName(_catalog.Suppliers.FirstOrDefault(x => x.Id == _details.Invoice.SupplierId)?.Name, _details.Invoice.SupplierId) | @_details.Invoice.Organization</p>
+    @if (CanEdit)
+    {
+        <button type="button" class="btn btn-primary mb-3" disabled="@DisableRowActions" @onclick="AddLine">@Localizer["Add Line Item"]</button>
+    }
+    @if (_edit != null && CanEdit)
+    {
+        <EditForm Model="_edit" OnValidSubmit="SaveAsync" class="mb-4" @key="_edit.Id">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset disabled="@Busy">
+                <legend>@Localizer[_edit.Id == 0 ? "New Line Item" : "Edit Line Item"]</legend>
+                <div class="row g-2 mb-3">
+                    <label class="col-md-6">@Localizer["Filter products by category"]
+                        <select class="form-select" @bind="_categoryFilter">
+                            <option value="">@Localizer["All categories"]</option>
+                            @foreach (var entry in _catalog.Categories) { <option value="@entry.Id">@DisplayName(entry.Name, entry.Id)</option> }
+                        </select>
+                    </label>
+                    <label class="col-md-6">@Localizer["Product"]
+                        <InputSelect class="form-select" @bind-Value="_edit.ProductId" @bind-Value:after="ApplyProductDefaults">
+                            <option value="0">@Localizer["Select a product"]</option>
+                            @if (_edit.ProductId > 0 && !_catalog.Products.Any(x => x.Id == _edit.ProductId))
+                            {
+                                <option value="@_edit.ProductId">@ProductName(_edit.ProductId)</option>
+                            }
+                            @foreach (var entry in ProductChoices)
+                            {
+                                <option value="@entry.Id">@DisplayName(entry.Name, entry.Id) @(!entry.Active ? Localizer["(inactive)"] : null)</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label class="col-md-3">@Localizer["Cases"] <InputNumber class="form-control" min="0" @bind-Value="_edit.Cases" /></label>
+                    <label class="col-md-3">@Localizer["Count per Case"] <InputNumber class="form-control" min="0" @bind-Value="_edit.CountPerCase" /></label>
+                    <label class="col-md-3">@Localizer["Price per Case"] <InputNumber class="form-control" min="0" step="0.0001" @bind-Value="_edit.PricePerCase" /></label>
+                    <label class="col-md-3">@Localizer["Weight per Case"] <InputNumber class="form-control" min="0" step="0.01" @bind-Value="_edit.WeightPerCase" /></label>
+                    <label class="col-md-6">@Localizer["Report Type"]
+                        <InputText class="form-control" maxlength="20" list="@ReportTypeListId" @bind-Value="_edit.ReportType" />
+                        <datalist id="@ReportTypeListId">
+                            @foreach (var entry in _reportTypes) { <option value="@entry"></option> }
+                        </datalist>
+                    </label>
+                </div>
+                <button class="btn btn-primary" type="submit">@Localizer["Save Line Item"]</button>
+                <button class="btn btn-secondary" type="button" @onclick="() => _edit = null">@Localizer["Cancel"]</button>
+            </fieldset>
+        </EditForm>
+    }
+    @if (_pendingDelete != null)
+    {
+        <div class="alert alert-warning" role="alert">
+            <p>@Localizer["Delete the line item for {0}?", ProductName(_pendingDelete.ProductId)]</p>
+            <button type="button" class="btn btn-danger" disabled="@Busy" @onclick="DeleteAsync">@Localizer["Delete Line Item"]</button>
+            <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="() => _pendingDelete = null">@Localizer["Cancel"]</button>
+        </div>
+    }
+    @if (_details.Lines.Count == 0)
+    {
+        <p>@Localizer["This invoice has no line items."]</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead><tr><th>@Localizer["Product"]</th><th>@Localizer["Report Type"]</th><th>@Localizer["Cases"]</th><th>@Localizer["Units"]</th><th>@Localizer["Total Weight"]</th><th>@Localizer["Total Cost"]</th>@if (CanEdit) { <th>@Localizer["Actions"]</th> }</tr></thead>
+                <tbody>
+                    @foreach (var line in _details.Lines)
+                    {
+                        <tr @key="line.Id">
+                            <td>@ProductName(line.ProductId)</td><td>@line.ReportType</td><td>@line.Cases</td><td>@line.Units</td>
+                            <td>@line.Weight.ToString("N2")</td><td>@line.Cost.ToString("C2")</td>
+                            @if (CanEdit)
+                            {
+                                <td class="text-nowrap">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" disabled="@DisableRowActions" @onclick="() => EditLine(line)">@Localizer["Edit"]</button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" disabled="@DisableRowActions" @onclick="() => _pendingDelete = line">@Localizer["Delete"]</button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+                <tfoot><tr class="fw-bold"><th colspan="2">@Localizer["Invoice Totals"]</th><td>@_details.Lines.Sum(x => (long)x.Cases.GetValueOrDefault())</td><td>@_details.Lines.Sum(x => (decimal)x.Units)</td>
+                    <td>@_details.Lines.Sum(x => x.Weight).ToString("N2")</td><td>@_details.Lines.Sum(x => x.Cost).ToString("C2")</td>@if (CanEdit) { <td></td> }</tr></tfoot>
+            </table>
+        </div>
+    }
+}
+else if (Busy)
+{
+    <p role="status">@Localizer["Loading invoice..."]</p>
+}
+
+@code {
+    private InventoryCatalog _catalog;
+    private InventoryInvoiceDetails _details;
+    private InventoryLine _edit;
+    private InventoryLine _pendingDelete;
+    [Parameter] public int InvoiceId { get; set; }
+    private int _originalProductId;
+    private int? _categoryFilter;
+    private IReadOnlyList<string> _reportTypes = Array.Empty<string>();
+    private string ReportTypeListId => $"inventory-report-types-{InventoryId}";
+    private bool DisableRowActions => Busy || _edit != null || _pendingDelete != null;
+    private IEnumerable<InventoryProduct> ProductChoices => _catalog.Products.Where(x =>
+        (x.Active || x.Id == _originalProductId) && (!_categoryFilter.HasValue || x.CategoryId == _categoryFilter || x.Id == _edit.ProductId));
+
+    protected override Task OnInitializedAsync() => RunAsync(async () =>
+    {
+        if (InvoiceId <= 0)
+            throw new System.ComponentModel.DataAnnotations.ValidationException("Select an invoice from the invoice list.");
+        _catalog = await Inventory.GetCatalogAsync(InventoryId);
+        _reportTypes = await LoadSuggestionsAsync("InventoryReportingType", 20, "USDA");
+        await ReloadAsync();
+    });
+    private string ProductName(int id) => DisplayName(_catalog.Products.FirstOrDefault(x => x.Id == id)?.Name, id);
+    private void AddLine()
+    {
+        _categoryFilter = null;
+        _originalProductId = 0;
+        _edit = new() { Cases = 1, ReportType = _reportTypes.Count == 1 ? _reportTypes[0] : null };
+    }
+    private void EditLine(InventoryLine line)
+    {
+        _categoryFilter = null;
+        _originalProductId = line.ProductId;
+        _edit = line with { };
+    }
+    private void ApplyProductDefaults()
+    {
+        var product = _catalog.Products.FirstOrDefault(x => x.Id == _edit.ProductId);
+        if (product == null) return;
+        _edit.CountPerCase = product.CaseCount ?? 0;
+        _edit.PricePerCase = product.CasePrice ?? 0;
+        _edit.WeightPerCase = product.CaseWeight ?? 0;
+    }
+    private async Task ReloadAsync() => _details = await Inventory.GetInvoiceAsync(InventoryId, InvoiceId);
+    private Task SaveAsync() => RunAsync(async () =>
+    {
+        await Inventory.SaveLineAsync(InventoryId, InvoiceId, _edit);
+        _edit = null;
+        await ReloadAsync();
+    });
+    private Task DeleteAsync() => RunAsync(async () =>
+    {
+        await Inventory.DeleteLineAsync(InventoryId, InvoiceId, _pendingDelete.Id);
+        _pendingDelete = null;
+        await ReloadAsync();
+    });
+}

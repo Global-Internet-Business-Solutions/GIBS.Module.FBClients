@@ -24,6 +24,15 @@ namespace GIBS.Module.FBClients.Startup
             services.AddTransient<IFBClientsService, ServerFBClientsService>();
             services.AddTransient<IFBClientsOrderTextSender, TwilioOrderTextSender>();
             services.AddDbContextFactory<FBClientsContext>(opt => { }, ServiceLifetime.Transient);
+
+            services.AddTransient<Lists.Services.IListsService, Lists.Services.ServerListsService>();
+            services.AddTransient<Lists.Repository.IListsRepository, Lists.Repository.ListsRepository>();
+            services.AddTransient<Ordering.Services.ServerFoodOrderService>();
+            services.AddTransient<Ordering.Services.IFoodOrderService>(provider => provider.GetRequiredService<Ordering.Services.ServerFoodOrderService>());
+            services.AddSingleton<Ordering.Services.FoodOrderLinks>();
+            services.AddTransient<Inventory.Services.IInventoryService, Inventory.Services.ServerInventoryService>();
+            services.AddTransient<Fulfillment.IFulfillmentService, Fulfillment.ServerFulfillmentService>();
+            services.AddTransient<ImportData.IImportDataService, ImportData.ServerImportDataService>();
         }
     }
 }

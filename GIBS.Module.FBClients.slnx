@@ -1,12 +1,26 @@
 <Solution>
+  <Folder Name="/_DNN/">
+    <Project Path="../../Websites/DNN9/Website/DesktopModules/GIBS/FBClients/FBClients.csproj" Id="2e64c942-4649-43ce-acc6-5b3e92accb6e">
+      <Build Project="false" />
+    </Project>
+    <Project Path="../../Websites/DNN9/Website/DesktopModules/GIBS/FBFoodInventory/FBFoodInventory.csproj" Id="45347e7e-eb98-43f2-a2e9-7bc0f5ee0ceb">
+      <Build Solution="Debug|*" Project="false" />
+    </Project>
+    <Project Path="../../Websites/DNN9/Website/DesktopModules/GIBS_FBFoodOrder/GIBS_FBFoodOrder.csproj" Id="7d61a32c-0f21-453f-a981-bd8e5a3a5304">
+      <Build Project="false" />
+    </Project>
+    <Project Path="../../Websites/DNN9/Website/DesktopModules/GIBS_FBFulfillment/GIBS_FBFulfillment.csproj" Id="ae94461f-5469-451d-b656-3124b7d6b9e6">
+      <Build Solution="Debug|*" Project="false" />
+    </Project>
+  </Folder>
   <Folder Name="/_Oqtane/">
-    <Project Path="../oqtane.framework/Oqtane.Client/Oqtane.Client.csproj">
+    <Project Path="../oqtane11/Oqtane.Client/Oqtane.Client.csproj">
       <Build Project="false" />
     </Project>
-    <Project Path="../oqtane.framework/Oqtane.Shared/Oqtane.Shared.csproj">
+    <Project Path="../oqtane11/Oqtane.Server/Oqtane.Server.csproj">
       <Build Project="false" />
     </Project>
-    <Project Path="..\oqtane.framework\Oqtane.Server\Oqtane.Server.csproj">
+    <Project Path="../oqtane11/Oqtane.Shared/Oqtane.Shared.csproj">
       <Build Project="false" />
     </Project>
   </Folder>
@@ -36,9 +50,6 @@
     <File Path="docs/deviations.md" />
     <File Path="docs/ai-decision-timeline.md" />
   </Folder>
-  <Project Path="../../Websites/DNN9/Website/DesktopModules/GIBS/FBClients/FBClients.csproj" Id="2e64c942-4649-43ce-acc6-5b3e92accb6e">
-    <Build Project="false" />
-  </Project>
   <Project Path="Client\GIBS.Module.FBClients.Client.csproj" />
   <Project Path="Package\GIBS.Module.FBClients.Package.csproj" />
   <Project Path="Server\GIBS.Module.FBClients.Server.csproj" />

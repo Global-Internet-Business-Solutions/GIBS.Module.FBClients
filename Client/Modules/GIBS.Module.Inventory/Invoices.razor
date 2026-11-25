@@ -1,0 +1,158 @@
+@namespace GIBS.Module.FBClients.Inventory
+@using GIBS.Module.FBClients.Inventory.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inherits InventoryPageBase
+@inject IStringLocalizer<Invoices> Localizer
+
+<a href="@NavigateUrl()">@Localizer["Back to Inventory"]</a>
+<h3>@Localizer["Invoices"]</h3>
+@if (_catalog != null && _invoices != null)
+{
+    <div class="d-flex gap-2 flex-wrap align-items-end mb-3">
+        @if (CanEdit)
+        {
+            <button type="button" class="btn btn-primary" disabled="@DisableRowActions" @onclick="AddInvoice">@Localizer["New Invoice"]</button>
+        }
+        <label>@Localizer["Invoice number, supplier or organization"] <input class="form-control" maxlength="100" @bind="_search" disabled="@Busy" /></label>
+        <button type="button" class="btn btn-outline-primary" disabled="@Busy" @onclick="() => LoadPageAsync(0, _search)">@Localizer["Search"]</button>
+    </div>
+    @if (_edit != null && CanEdit)
+    {
+        <EditForm Model="_edit" OnValidSubmit="SaveAsync" class="mb-4" @key="_edit.Id">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <fieldset disabled="@Busy">
+                <legend>@Localizer[_edit.Id == 0 ? "New Invoice" : "Edit Invoice"]</legend>
+                <div class="row g-2 mb-3">
+                    <label class="col-md-6">@Localizer["Invoice Number"] <InputText class="form-control" maxlength="50" @bind-Value="_edit.Number" /></label>
+                    <label class="col-md-6">@Localizer["Invoice Date"] <InputDate class="form-control" @bind-Value="_edit.Date" /></label>
+                    <label class="col-md-6">@Localizer["Supplier"]
+                        <InputSelect class="form-select" @bind-Value="_edit.SupplierId">
+                            <option value="">@Localizer["Select a supplier"]</option>
+                            @foreach (var entry in _catalog.Suppliers.Where(x => x.Active || x.Id == _originalSupplierId))
+                            {
+                                <option value="@entry.Id">@DisplayName(entry.Name, entry.Id) @(!entry.Active ? Localizer["(inactive)"] : null)</option>
+                            }
+                        </InputSelect>
+                    </label>
+                    <label class="col-md-6">@Localizer["Organization"]
+                        <InputText class="form-control" maxlength="50" list="@OrganizationListId" @bind-Value="_edit.Organization" />
+                        <datalist id="@OrganizationListId">
+                            @foreach (var entry in _organizations) { <option value="@entry"></option> }
+                        </datalist>
+                    </label>
+                </div>
+                <button class="btn btn-primary" type="submit">@Localizer[_edit.Id == 0 ? "Save and Add Line Items" : "Save Invoice"]</button>
+                <button class="btn btn-secondary" type="button" @onclick="() => _edit = null">@Localizer["Cancel"]</button>
+            </fieldset>
+        </EditForm>
+    }
+    @if (_pendingDelete != null)
+    {
+        <div class="alert alert-warning" role="alert">
+            <p>@Localizer["Delete invoice {0} and all its line items?", DisplayName(_pendingDelete.Number, _pendingDelete.Id)]</p>
+            <button type="button" class="btn btn-danger" disabled="@Busy" @onclick="DeleteAsync">@Localizer["Delete Invoice"]</button>
+            <button type="button" class="btn btn-secondary" disabled="@Busy" @onclick="() => _pendingDelete = null">@Localizer["Cancel"]</button>
+        </div>
+    }
+    @if (_invoices.Items.Count == 0)
+    {
+        <p>@Localizer["No invoices found."]</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead><tr><th>@Localizer["Invoice"]</th><th>@Localizer["Date"]</th><th>@Localizer["Supplier"]</th><th>@Localizer["Organization"]</th>@if (CanEdit) { <th>@Localizer["Actions"]</th> }</tr></thead>
+                <tbody>
+                    @foreach (var entry in _invoices.Items)
+                    {
+                        <tr @key="entry.Id">
+                            <td><a href="@InvoiceUrl(entry.Id)">@DisplayName(entry.Number, entry.Id)</a></td><td>@entry.Date?.ToShortDateString()</td>
+                            <td>@SupplierName(entry.SupplierId)</td><td>@entry.Organization</td>
+                            @if (CanEdit)
+                            {
+                                <td class="text-nowrap">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" disabled="@DisableRowActions" @onclick="() => EditInvoice(entry)">@Localizer["Edit Header"]</button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" disabled="@DisableRowActions" @onclick="() => _pendingDelete = entry">@Localizer["Delete"]</button>
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-outline-secondary" disabled="@(Busy || _page == 0)" @onclick="() => LoadPageAsync(_page - 1, _lastSearch)">@Localizer["Previous"]</button>
+            <span>@Localizer["Page {0} of {1}", _page + 1, PageCount]</span>
+            <button type="button" class="btn btn-outline-secondary" disabled="@(Busy || _page + 1 >= PageCount)" @onclick="() => LoadPageAsync(_page + 1, _lastSearch)">@Localizer["Next"]</button>
+        </div>
+    }
+}
+else if (Busy)
+{
+    <p role="status">@Localizer["Loading inventory..."]</p>
+}
+
+@code {
+    [Inject] private NavigationManager Navigation { get; set; }
+    private InventoryCatalog _catalog;
+    private InventoryPage<InventoryInvoice> _invoices;
+    private InventoryInvoice _edit;
+    private InventoryInvoice _pendingDelete;
+    private int? _originalSupplierId;
+    private int _page;
+    private string _search;
+    private string _lastSearch;
+    private IReadOnlyList<string> _organizations = Array.Empty<string>();
+    private string OrganizationListId => $"inventory-organizations-{InventoryId}";
+    private int PageCount => (_invoices.Total - 1) / InventoryModule.InvoicePageSize + 1;
+    private bool DisableRowActions => Busy || _edit != null || _pendingDelete != null;
+
+    protected override Task OnInitializedAsync() => RunAsync(async () =>
+    {
+        _catalog = await Inventory.GetCatalogAsync(InventoryId);
+        _organizations = await LoadSuggestionsAsync("ClientOrganizations", 50, "Main Location");
+        await ReloadAsync(0, null);
+    });
+
+    private string SupplierName(int? id) => DisplayName(_catalog.Suppliers.FirstOrDefault(x => x.Id == id)?.Name, id);
+    private string InvoiceUrl(int id) => NavigateUrl(InventoryId, nameof(InvoiceDetails), new Dictionary<string, string> { ["id"] = id.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+    private void AddInvoice()
+    {
+        _originalSupplierId = null;
+        _edit = new() { Date = DateOnly.FromDateTime(DateTime.Today), Organization = _organizations.Count == 1 ? _organizations[0] : null };
+    }
+    private void EditInvoice(InventoryInvoice entry)
+    {
+        _originalSupplierId = entry.SupplierId;
+        _edit = entry with { };
+    }
+    private Task LoadPageAsync(int page, string search) => RunAsync(() => ReloadAsync(page, search));
+    private async Task ReloadAsync(int page, string search)
+    {
+        var result = await Inventory.GetInvoicesAsync(InventoryId, page, search);
+        if (page > 0 && result.Items.Count == 0)
+        {
+            page = Math.Max(0, result.Total - 1) / InventoryModule.InvoicePageSize;
+            result = await Inventory.GetInvoicesAsync(InventoryId, page, search);
+        }
+        _invoices = result;
+        _page = page;
+        _lastSearch = search;
+    }
+    private Task SaveAsync() => RunAsync(async () =>
+    {
+        var isNew = _edit.Id == 0;
+        var id = await Inventory.SaveInvoiceAsync(InventoryId, _edit);
+        _edit = null;
+        if (isNew) Navigation.NavigateTo(InvoiceUrl(id));
+        else await ReloadAsync(_page, _lastSearch);
+    });
+    private Task DeleteAsync() => RunAsync(async () =>
+    {
+        await Inventory.DeleteInvoiceAsync(InventoryId, _pendingDelete.Id);
+        _pendingDelete = null;
+        await ReloadAsync(_page, _lastSearch);
+    });
+}

@@ -1,0 +1,151 @@
+@namespace GIBS.Module.FBClients.Ordering
+@using GIBS.Module.FBClients.Ordering.Services
+@inherits ModuleBase
+@inject IFoodOrderService FoodOrders
+@inject IStringLocalizer<Index> Localizer
+
+@if (_loading)
+{
+    <p role="status">@Localizer["Loading your order sheet..."]</p>
+}
+else if (_submitted)
+{
+    <p class="alert alert-success" role="status">@Localizer["Your order has been submitted."]</p>
+}
+else if (_sheet != null)
+{
+    <h3>@Localizer["Order Sheet"]</h3>
+    <dl>
+        <dt>@Localizer["Client"]</dt><dd>@_sheet.ClientName</dd>
+        <dt>@Localizer["Visit Date"]</dt><dd>@_sheet.VisitDate.ToShortDateString()</dd>
+        @if (_sheet.BagsAllowed.HasValue)
+        {
+            <dt>@Localizer["Bags Allowed"]</dt><dd>@_sheet.BagsAllowed</dd>
+        }
+        <dt>@Localizer["Household Size"]</dt><dd>@_sheet.HouseholdSize</dd>
+    </dl>
+    @foreach (var section in _sheet.Sections)
+    {
+        @if (section.Products.Count > 0 || !string.IsNullOrWhiteSpace(section.Instructions))
+        {
+            <h4>@section.Name</h4>
+            @if (!string.IsNullOrWhiteSpace(section.Instructions))
+            {
+                <p class="text-break" style="white-space: pre-line">@section.Instructions</p>
+            }
+            @foreach (var product in section.Products)
+            {
+                var id = $"food-order-{ModuleState.ModuleId}-{product.Id}";
+                <div class="row align-items-center mb-2">
+                    <label class="col-8 col-form-label" for="@id">@product.Name</label>
+                    <div class="col-4">
+                        <select id="@id" class="form-select" @bind="_quantities[product.Id]" disabled="@_busy">
+                            @for (int quantity = 0; quantity <= product.Limit; quantity++)
+                            {
+                                <option value="@quantity">@quantity</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            }
+        }
+    }
+    <button type="button" class="btn btn-primary" disabled="@_busy" @onclick="SubmitAsync">@Localizer["Submit Order"]</button>
+}
+
+@if (_message != null)
+{
+    <p class="alert alert-warning mt-3" role="alert">@_message</p>
+}
+
+@code {
+    public override bool? Prerender => false;
+
+    private const string Unavailable = "This order link is invalid, expired, or no longer available.";
+    private FoodOrderSheet _sheet;
+    private Dictionary<int, int> _quantities = new();
+    private string _key;
+    private string _message;
+    private bool _loading;
+    private bool _busy;
+    private bool _submitted;
+    private int _moduleId;
+    private int _requestVersion;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        PageState.QueryString.TryGetValue("key", out var key);
+        if (_moduleId == ModuleState.ModuleId && _key == key) return;
+
+        _moduleId = ModuleState.ModuleId;
+        _key = key;
+        var version = ++_requestVersion;
+        _sheet = null;
+        _submitted = false;
+        _busy = false;
+        _loading = !string.IsNullOrWhiteSpace(key);
+        _message = _loading ? null : Localizer["Open the link from your order text to begin."].Value;
+        if (!_loading) return;
+
+        try
+        {
+            var sheet = await FoodOrders.OpenAsync(_moduleId, key);
+            if (version != _requestVersion) return;
+            _sheet = sheet;
+            if (sheet == null) _message = Localizer[Unavailable];
+            else _quantities = sheet.Sections.SelectMany(section => section.Products).ToDictionary(product => product.Id, _ => 0);
+        }
+        catch (Exception ex)
+        {
+            if (version == _requestVersion) _message = Localizer["The order sheet could not be loaded. Try reopening your link."];
+            await logger.LogError(LogFunction.Read, "Unable to open food order: {ErrorType}", ex.GetType().Name);
+        }
+        finally
+        {
+            if (version == _requestVersion) _loading = false;
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_busy || _sheet == null) return;
+        var quantities = _quantities.Where(pair => pair.Value > 0).ToDictionary(pair => pair.Key, pair => pair.Value);
+        if (quantities.Count == 0)
+        {
+            _message = Localizer["Select at least one product before submitting."];
+            return;
+        }
+
+        var version = _requestVersion;
+        _busy = true;
+        _message = null;
+        try
+        {
+            var result = await FoodOrders.SubmitAsync(_moduleId, _key, quantities);
+            if (version != _requestVersion) return;
+            switch (result)
+            {
+                case FoodOrderSubmitResult.Submitted:
+                    _sheet = null;
+                    _submitted = true;
+                    break;
+                case FoodOrderSubmitResult.Unavailable:
+                    _sheet = null;
+                    _message = Localizer[Unavailable];
+                    break;
+                default:
+                    _message = Localizer["Some selections are no longer available. Reopen your order link and check the current limits."];
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (version == _requestVersion) _message = Localizer["Submission could not be confirmed. Reopen your order link before trying again."];
+            await logger.LogError(LogFunction.Update, "Unable to submit food order: {ErrorType}", ex.GetType().Name);
+        }
+        finally
+        {
+            if (version == _requestVersion) _busy = false;
+        }
+    }
+}

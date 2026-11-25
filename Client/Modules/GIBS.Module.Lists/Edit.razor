@@ -1,0 +1,321 @@
+@using Oqtane.Modules.Controls
+@using GIBS.Module.FBClients.Lists.Services
+@using GIBS.Module.FBClients.Lists.Models
+@using ListEntry = GIBS.Module.FBClients.Lists.Models.Lists
+
+@namespace GIBS.Module.FBClients.Lists
+@inherits ModuleBase
+@inject IListsService ClientListsService
+@inject NavigationManager NavigationManager
+@inject IStringLocalizer<Edit> Localizer
+
+<div class="row">
+@if (_isAddingEntry)
+{
+    <div class="col-md-3 mb-3">
+        <select class="form-select mb-2" aria-label="@Localizer["ListName.Text"]" value="@SelectedListKey" @onchange="ChangeList" disabled="@(!_ready || _saving)">
+            @foreach (var group in _groups)
+            {
+                <option value="@group.Key">@group.DisplayName</option>
+            }
+        </select>
+        <ActionLink Action="Add" Security="SecurityAccessLevel.Edit" Text="@Localizer["AddNewList"]" />
+    </div>
+}
+<form @ref="form" class="@($"{(_isAddingEntry ? "col-md-9" : "col-12")} {(validated ? "was-validated" : "needs-validation")}")" novalidate>
+    <div class="container">
+        @if (_isAddingEntry || PageState.Action == "Edit")
+        {
+            <h4 class="text-primary text-center mb-3">@Localizer[PageState.Action == "Edit" ? "EditItem" : "AddNewItem"]</h4>
+            <div class="row mb-2 align-items-center">
+                <Label Class="col-sm-4 text-sm-end" For="selectedListName" HelpText="@Localizer["ListName.HelpText"]">@Localizer["ListName.Text"]</Label>
+                <div id="selectedListName" class="col-sm-8">@_list.ListName</div>
+            </div>
+            <div class="row mb-2 align-items-center">
+                <Label Class="col-sm-4 text-sm-end" For="selectedParent" HelpText="@Localizer["Parent.HelpText"]">@Localizer["Parent.Text"]</Label>
+                <div id="selectedParent" class="col-sm-8">@_parentText</div>
+            </div>
+            <div class="row mb-2 align-items-center">
+                <Label Class="col-sm-4 text-sm-end" For="entryTotal" HelpText="@Localizer["Total.HelpText"]">@Localizer["Total.Text"]</Label>
+                <div id="entryTotal" class="col-sm-8">@Localizer["Total.Entries", _entryCount]</div>
+            </div>
+            <div class="row mb-3 align-items-center">
+                <Label Class="col-sm-4 text-sm-end" For="entryText" HelpText="@Localizer["EntryText.HelpText"]">@Localizer["EntryText.Text"] <span class="text-danger" aria-hidden="true">*</span></Label>
+                <div class="col-sm-6">
+                    <input id="entryText" class="form-control" maxlength="150" @bind="_list.Text" required aria-describedby="entryTextFeedback" />
+                    <div id="entryTextFeedback" class="invalid-feedback">@Localizer["EntryText.Required"]</div>
+                </div>
+            </div>
+            <div class="row mb-4 align-items-center">
+                <Label Class="col-sm-4 text-sm-end" For="entryValue" HelpText="@Localizer["EntryValue.HelpText"]">@Localizer["EntryValue.Text"] <span class="text-danger" aria-hidden="true">*</span></Label>
+                <div class="col-sm-6">
+                    <input id="entryValue" class="form-control" maxlength="300" @bind="_list.Value" required aria-describedby="entryValueFeedback" />
+                    <div id="entryValueFeedback" class="invalid-feedback">@Localizer["EntryValue.Required"]</div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <h4 class="text-primary text-center mb-3">@Localizer["AddNewList"]</h4>
+            <div class="row mb-3 align-items-center">
+                <Label Class="col-sm-3" For="listName">@Localizer["ListName.Text"]</Label>
+                <div class="col-sm-9">
+                    <input id="listName" class="form-control" maxlength="100" @bind="_list.ListName" required />
+                </div>
+            </div>
+            <div class="row mb-3 align-items-center">
+                <Label Class="col-sm-3" For="parentList">@Localizer["ParentList.Text"]</Label>
+                <div class="col-sm-9">
+                    <select id="parentList" class="form-select" @bind="_parentListKey" @bind:after="ChangeParentList" disabled="@(!_ready || _saving)">
+                        <option value="">@Localizer["ParentList.None"]</option>
+                        @foreach (var group in _groups.Where(group => group.ParentID == 0))
+                        {
+                            <option value="@group.Key">@group.DisplayName</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="row mb-3 align-items-center">
+                <Label Class="col-sm-3" For="parentId">@Localizer["Parent.Text"]</Label>
+                <div class="col-sm-9">
+                    <select id="parentId" class="form-select" @bind="_list.ParentID" disabled="@(string.IsNullOrEmpty(_parentListKey) || !_ready || _saving)" required="@(!string.IsNullOrEmpty(_parentListKey))">
+                        <option value="">@Localizer["Parent.Select"]</option>
+                        @foreach (var parent in ParentEntries)
+                        {
+                            <option value="@parent.ListsId">@parent.Text (@parent.Value)</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="row mb-3 align-items-center">
+                <Label Class="col-sm-3" For="text" HelpText="@Localizer["EntryText.HelpText"]">@Localizer["EntryText.Text"]</Label>
+                <div class="col-sm-9">
+                    <input id="text" class="form-control" maxlength="150" @bind="_list.Text" required />
+                </div>
+            </div>
+            <div class="row mb-3 align-items-center">
+                <Label Class="col-sm-3" For="value" HelpText="@Localizer["EntryValue.HelpText"]">@Localizer["EntryValue.Text"]</Label>
+                <div class="col-sm-9">
+                    <input id="value" class="form-control" maxlength="300" @bind="_list.Value" required />
+                </div>
+            </div>
+            <div class="row mb-3 align-items-center">
+                <Label Class="col-sm-3" For="enableSortOrder">@Localizer["EnableSortOrder.Text"]</Label>
+                <div class="col-sm-9">
+                    <input id="enableSortOrder" class="form-check-input" type="checkbox" @bind="_enableSortOrder" />
+                </div>
+            </div>
+        }
+    </div>
+    <button type="button" class="btn btn-success" @onclick="Save" disabled="@(!_ready || _saving)">@Localizer["Save"]</button>
+    <NavLink class="btn btn-secondary" href="@ReturnUrl">@Localizer["Cancel"]</NavLink>
+    <br /><br />
+    @if (PageState.Action == "Edit")
+    {
+        <AuditInfo CreatedBy="@_createdby" CreatedOn="@_createdon" ModifiedBy="@_modifiedby" ModifiedOn="@_modifiedon"></AuditInfo>
+    }
+</form>
+</div>
+
+@code {
+    public override SecurityAccessLevel SecurityAccessLevel => SecurityAccessLevel.Edit;
+
+    public override string RenderMode => RenderModes.Interactive;
+
+    public override string Actions => "Add,Edit";
+
+    public override string Title => "Manage Lists";
+
+    private ElementReference form;
+    private bool validated;
+    private int _id;
+    private ListEntry _list = new();
+    private List<ListEntry> _parentLists = new();
+    private List<ListGroup> _groups = new();
+    private string _parentListKey;
+    private bool _enableSortOrder;
+    private bool _isAddingEntry;
+    private bool _ready;
+    private bool _saving;
+    private int _entryCount;
+    private string _parentText;
+    private string SelectedListKey => $"{_list.ParentID}:{_list.ListName}";
+    private List<ListEntry> ParentEntries => _groups.FirstOrDefault(group => group.Key == _parentListKey)?.Entries ?? new List<ListEntry>();
+    private string SelectedListUrl => NavigateUrl(PageState.Page.Path, $"listName={Uri.EscapeDataString(_list.ListName)}&parentId={_list.ParentID}");
+    private string ReturnUrl => _isAddingEntry || PageState.Action == "Edit" ? SelectedListUrl : NavigateUrl();
+    private string _createdby;
+    private DateTime _createdon;
+    private string _modifiedby;
+    private DateTime _modifiedon;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _list.ModuleId = ModuleState.ModuleId;
+            _list.SiteID = ModuleState.SiteId;
+            _parentLists = await ClientListsService.GetListssAsync(ModuleState.ModuleId)
+                ?? throw new InvalidOperationException("Unable to load lists.");
+            _groups = ListGroup.Create(_parentLists);
+
+            if (PageState.Action == "Add" && PageState.QueryString.TryGetValue("listName", out var listName))
+            {
+                _isAddingEntry = true;
+                var parentId = PageState.QueryString.TryGetValue("parentId", out var parent) ? int.Parse(parent) : 0;
+                SelectExistingList($"{parentId}:{Uri.UnescapeDataString(listName)}");
+            }
+
+            if (PageState.Action == "Edit")
+            {
+                _id = Int32.Parse(PageState.QueryString["id"]);
+                var loadedList = await ClientListsService.GetListsAsync(_id, ModuleState.ModuleId);
+                if (loadedList == null)
+                {
+                    throw new InvalidOperationException($"List entry {_id} could not be loaded.");
+                }
+
+                _list = loadedList;
+                var group = _groups.First(item => string.Equals(item.Key, SelectedListKey, StringComparison.OrdinalIgnoreCase));
+                _entryCount = group.Entries.Count;
+                _parentText = group.ParentID == 0 ? Localizer["Parent.None"].Value : group.ParentKey;
+                _createdby = _list.CreatedBy;
+                _createdon = _list.CreatedOn;
+                _modifiedby = _list.ModifiedBy;
+                _modifiedon = _list.ModifiedOn;
+            }
+
+            _ready = true;
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Loading Lists {ListsId} {Error}", _id, ex.Message);
+            AddModuleMessage(Localizer["Message.LoadError"], MessageType.Error);
+        }
+    }
+
+    private void SelectExistingList(string key)
+    {
+        var group = _groups.FirstOrDefault(item => string.Equals(item.Key, key, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("The selected list no longer exists.");
+        var template = group.Entries.First();
+        _list = new ListEntry
+        {
+            ModuleId = ModuleState.ModuleId,
+            SiteID = ModuleState.SiteId,
+            ListName = template.ListName,
+            Name = template.Name,
+            ParentID = template.ParentID,
+            Level = template.Level,
+            DefinitionID = template.DefinitionID,
+            SystemList = template.SystemList
+        };
+        _entryCount = group.Entries.Count;
+        _parentText = group.ParentID == 0 ? Localizer["Parent.None"].Value : group.ParentKey;
+        validated = false;
+    }
+
+    private void ChangeParentList()
+    {
+        _list.ParentID = ParentEntries.FirstOrDefault()?.ListsId ?? 0;
+    }
+
+    private async Task ChangeList(ChangeEventArgs args)
+    {
+        try
+        {
+            SelectExistingList(args.Value?.ToString());
+        }
+        catch (Exception ex)
+        {
+            _ready = false;
+            await logger.LogError(ex, "Error Selecting List {Error}", ex.Message);
+            AddModuleMessage(Localizer["Message.LoadError"], MessageType.Error);
+        }
+    }
+
+    private async Task Save()
+    {
+        if (!_ready || _saving)
+        {
+            return;
+        }
+
+        try
+        {
+            _saving = true;
+            validated = true;
+            var interop = new Oqtane.UI.Interop(JSRuntime);
+            if (!await interop.FormValid(form))
+            {
+                AddModuleMessage(Localizer["Message.SaveValidation"], MessageType.Warning);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(_list.Text) || string.IsNullOrWhiteSpace(_list.Value))
+            {
+                AddModuleMessage(Localizer["Message.SaveValidation"], MessageType.Warning);
+                return;
+            }
+
+            if (PageState.Action == "Add")
+            {
+                _list.ModuleId = ModuleState.ModuleId;
+                _list.SiteID = ModuleState.SiteId;
+                if (!_isAddingEntry)
+                {
+                    if (string.IsNullOrWhiteSpace(_list.ListName))
+                    {
+                        AddModuleMessage(Localizer["Message.SaveValidation"], MessageType.Warning);
+                        return;
+                    }
+
+                    _list.ListName = _list.ListName.Trim();
+                    if (_groups.Any(group => group.ParentID == _list.ParentID
+                        && string.Equals(group.ListName, _list.ListName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        AddModuleMessage(Localizer["Message.ListExists"], MessageType.Warning);
+                        return;
+                    }
+
+                    if (!string.IsNullOrEmpty(_parentListKey) && !ParentEntries.Any(entry => entry.ListsId == _list.ParentID))
+                    {
+                        AddModuleMessage(Localizer["Message.ParentRequired"], MessageType.Warning);
+                        return;
+                    }
+
+                    _list.SortOrder = _enableSortOrder ? 1 : 0;
+                }
+
+                var addedList = await ClientListsService.AddListsAsync(_list, createNewList: !_isAddingEntry)
+                    ?? throw new InvalidOperationException("The list entry was not saved.");
+                _list = addedList;
+                await logger.LogInformation("Lists Added {Lists}", addedList);
+            }
+            else
+            {
+                var existingList = await ClientListsService.GetListsAsync(_id, ModuleState.ModuleId);
+                if (existingList == null)
+                {
+                    throw new InvalidOperationException($"List entry {_id} could not be loaded for update.");
+                }
+
+                existingList.Value = _list.Value;
+                existingList.Text = _list.Text;
+                var updatedList = await ClientListsService.UpdateListsAsync(existingList)
+                    ?? throw new InvalidOperationException("The list entry was not saved.");
+                await logger.LogInformation("Lists Updated {Lists}", updatedList);
+            }
+
+            NavigationManager.NavigateTo(SelectedListUrl);
+        }
+        catch (Exception ex)
+        {
+            await logger.LogError(ex, "Error Saving Lists {Error}", ex.Message);
+            AddModuleMessage(Localizer["Message.SaveError"], MessageType.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

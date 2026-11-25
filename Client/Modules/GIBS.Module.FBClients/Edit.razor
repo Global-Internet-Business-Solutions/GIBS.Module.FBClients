@@ -1,12 +1,16 @@
 @using Oqtane.Modules.Controls
 @using GIBS.Module.FBClients.Services
+@using GIBS.Module.FBClients.Services
 @using GIBS.Module.FBClients.Models
+@using GIBS.Module.FBClients.Lists.Services
+@using AddressListEntry = GIBS.Module.FBClients.Lists.Models.Lists
 @using System.Globalization
 
 @namespace GIBS.Module.FBClients
 @inherits ModuleBase
 @implements IAsyncDisposable
 @inject IFBClientsService ClientFBClientsService
+@inject IListsService ListsService
 @inject ISettingService SettingService
 @inject IUserRoleService UserRoleService
 @inject IFileService _fileService
@@ -141,9 +145,13 @@
                                 <Label Class="col-sm-3" For="ddlClientServiceLocation" HelpText="Where the client originated" ResourceKey="lblClientServiceLocation">Client Origination:</Label>
                                 <div class="col-sm-9">
                                     <select id="ddlClientServiceLocation" class="form-select" @bind="_client.ServiceLocation">
-                                        @foreach (var loc in _serviceLocationOptions)
+                                        @if (string.IsNullOrWhiteSpace(_client.ServiceLocation))
                                         {
-                                            <option value="@loc">@loc</option>
+                                            <option value=""></option>
+                                        }
+                                        @foreach (var loc in WithSavedOptions(_clientServiceLocationOptions, new[] { _client.ServiceLocation }))
+                                        {
+                                            <option value="@loc.Value">@loc.Text</option>
                                         }
                                     </select>
                                 </div>
@@ -178,9 +186,9 @@
                                 <div class="col-sm-9">
                                     <select id="ddlClientSuffix" class="form-select" @bind="_client.ClientSuffix">
                                         <option value=""></option>
-                                        @foreach (var suffix in _suffixOptions)
+                                        @foreach (var suffix in WithSavedOptions(_clientSuffixOptions, new[] { _client.ClientSuffix }))
                                         {
-                                            <option value="@suffix">@suffix</option>
+                                            <option value="@suffix.Value">@suffix.Text</option>
                                         }
                                     </select>
                                 </div>
@@ -214,9 +222,9 @@
                                 <div class="col-sm-9">
                                     <select id="ddlEthnicity" class="form-select" @bind="_client.ClientEthnicity" required="@IsEthnicityRequired">
                                         <option value=""></option>
-                                        @foreach (var eth in _ethnicityOptions)
+                                        @foreach (var eth in WithSavedOptions(_ethnicityOptions, new[] { _client.ClientEthnicity }))
                                         {
-                                            <option value="@eth">@eth</option>
+                                            <option value="@eth.Value">@eth.Text</option>
                                         }
                                     </select>
                                 </div>
@@ -228,9 +236,9 @@
                             <div class="col-sm-9">
                                 <select id="ddlClientLanguage" class="form-select" @bind="_client.ClientLanguage" required="@_settings.ShowRequiredFields">
                                     <option value=""></option>
-                                    @foreach (var lang in _languageOptions)
+                                    @foreach (var lang in WithSavedOptions(_languageOptions, new[] { _client.ClientLanguage }))
                                     {
-                                        <option value="@lang.Key">@lang.Value</option>
+                                        <option value="@lang.Value">@lang.Text</option>
                                     }
                                 </select>
                             </div>
@@ -273,31 +281,41 @@
                         <div class="row mb-2 align-items-center">
                             <Label Class="col-sm-3" For="ddlClientCity" HelpText="Select Town" ResourceKey="lblClientCity">Town:</Label>
                             <div class="col-sm-9">
-                                <select id="ddlClientCity" class="form-select" value="@(_client.ClientCity ?? string.Empty)" @onchange="OnClientCityChanged" required>
+                                <select id="ddlClientCity" class="form-select" @bind:get="SelectedCityOption" @bind:set="OnClientCityChangedAsync" required>
                                     <option value="">Select Town</option>
                                     @foreach (var town in _townOptions)
                                     {
-                                        <option value="@town">@town</option>
+                                        <option value="@town.ListsId">@town.Text</option>
                                     }
-                                    <option value="OTHER">OTHER</option>
+                                    @if (_selectedCity == null && !string.IsNullOrWhiteSpace(_client.ClientCity) && !IsOtherCity)
+                                    {
+                                        <option value="@SavedCityOption">@_client.ClientCity</option>
+                                    }
+                                    <option value="@OtherCity">@OtherCity</option>
                                 </select>
                             </div>
                         </div>
 
                         <div class="row mb-2 align-items-center">
-                            <Label Class="col-sm-3" For="ddlClientTown" HelpText="Select Village" ResourceKey="lblClientTown">Village:</Label>
+                            <Label Class="col-sm-3" For="@(IsOtherCity ? "txtClientTown" : "ddlClientTown")" HelpText="Select Village" ResourceKey="lblClientTown">Village:</Label>
                             <div class="col-sm-9">
-                                @if (string.Equals(_client.ClientCity, "OTHER", StringComparison.OrdinalIgnoreCase))
+                                @if (IsOtherCity)
                                 {
                                     <input id="txtClientTown" class="form-control" maxlength="20" @bind="_client.ClientTown" placeholder="Enter Town/Village" />
                                 }
                                 else
                                 {
-                                    <select id="ddlClientTown" class="form-select" @bind="_client.ClientTown">
-                                        <option value=""></option>
-                                        @foreach (var village in GetVillageOptionsForCity(_client.ClientCity))
+                                    var savedVillage = _villageOptions.FirstOrDefault(village => AddressValuesMatch(village.Value, _client.ClientTown));
+                                    var villageValue = savedVillage?.Value ?? _client.ClientTown ?? string.Empty;
+                                    <select @key="_selectedCity?.ListsId" id="ddlClientTown" class="form-select" disabled="@_loadingVillages" @bind:get="villageValue" @bind:set="OnClientVillageChanged">
+                                        <option value="">@(_loadingVillages ? Localizer["Message.AddressVillagesLoading"].Value : string.Empty)</option>
+                                        @foreach (var village in _villageOptions)
                                         {
-                                            <option value="@village">@village</option>
+                                            <option value="@village.Value">@village.Text</option>
+                                        }
+                                        @if (savedVillage == null && !string.IsNullOrWhiteSpace(_client.ClientTown))
+                                        {
+                                            <option value="@_client.ClientTown">@_client.ClientTown</option>
                                         }
                                     </select>
                                 }
@@ -377,9 +395,9 @@
                                 <div class="col-sm-9">
                                     <select id="ddlPrimaryIncomeSource" class="form-select" @bind="_client.PrimaryIncomeSource" required="@IsPrimaryIncomeSourceRequired">
                                         <option value=""></option>
-                                        @foreach (var src in _primaryIncomeSourceOptions)
+                                        @foreach (var src in WithSavedOptions(_primaryIncomeSourceOptions, new[] { _client.PrimaryIncomeSource }))
                                         {
-                                            <option value="@src">@src</option>
+                                            <option value="@src.Value">@src.Text</option>
                                         }
                                     </select>
                                 </div>
@@ -390,13 +408,13 @@
                             <Label Class="col-sm-3" For="cblTrueFalseQuestions" HelpText="Select all program questions that apply to this client" ResourceKey="lblTrueFalseQuestions">Check All That Apply:</Label>
                             <div class="col-sm-9">
                                 <ul id="cblTrueFalseQuestions" class="myGroupCheckBox">
-                                    @foreach (var question in _trueFalseQuestionOptions)
+                                    @foreach (var question in TrueFalseQuestionsForEdit)
                                     {
-                                        var qKey = question;
-                                        <li>
+                                        var questionId = $"tf_{ModuleState.ModuleId}_{Uri.EscapeDataString(question.Value)}";
+                                        <li @key="question.Value">
                                             <div class="form-check">
-                                                <input type="checkbox" class="form-check-input" id="@($"tf_{qKey}")" checked="@GetTfAnswer(qKey)" @onchange="@(e => SetTfAnswer(qKey, (bool)(e.Value ?? false)))" />
-                                                <label class="form-check-label" for="@($"tf_{qKey}")">@qKey</label>
+                                                <input type="checkbox" class="form-check-input" id="@questionId" checked="@GetTfAnswer(question.Value)" @onchange="@(e => SetTfAnswer(question.Value, (bool)(e.Value ?? false)))" />
+                                                <label class="form-check-label" for="@questionId">@question.Text</label>
                                             </div>
                                         </li>
                                     }
@@ -423,13 +441,13 @@
                                 <Label Class="col-sm-3" For="cblDisability" HelpText="Select all disabilities that apply" ResourceKey="lblDisability">Disabilities:</Label>
                                 <div class="col-sm-9">
                                     <ul id="cblDisability" class="myGroupCheckBox">
-                                        @foreach (var dis in _disabilityOptions)
+                                        @foreach (var dis in WithSavedOptions(_disabilityOptions, _selectedDisabilities, StringComparer.OrdinalIgnoreCase))
                                         {
-                                            var dKey = dis;
-                                            <li>
+                                            var disabilityId = $"dis_{ModuleState.ModuleId}_{Uri.EscapeDataString(dis.Value)}";
+                                            <li @key="dis.Value">
                                                 <div class="form-check">
-                                                    <input type="checkbox" class="form-check-input" id="@($"dis_{dKey}")" checked="@HasDisability(dKey)" @onchange="@(e => ToggleDisability(dKey, (bool)(e.Value ?? false)))" />
-                                                    <label class="form-check-label" for="@($"dis_{dKey}")">@dKey</label>
+                                                    <input type="checkbox" class="form-check-input" id="@disabilityId" checked="@HasDisability(dis.Value)" @onchange="@(e => ToggleDisability(dis.Value, (bool)(e.Value ?? false)))" />
+                                                    <label class="form-check-label" for="@disabilityId">@dis.Text</label>
                                                 </div>
                                             </li>
                                         }
@@ -772,9 +790,9 @@
                                     <div class="col-sm-9">
                                         <select id="ddlAFMSuffix" class="form-select" @bind="_editingAfm.AFMSuffix">
                                             <option value=""></option>
-                                            @foreach (var suffix in _suffixOptions)
+                                            @foreach (var suffix in WithSavedOptions(_suffixOptions, new[] { _editingAfm.AFMSuffix }))
                                             {
-                                                <option value="@suffix">@suffix</option>
+                                                <option value="@suffix.Value">@suffix.Text</option>
                                             }
                                         </select>
                                     </div>
@@ -801,9 +819,9 @@
                                     <div class="col-sm-9">
                                         <select id="ddlAFMRelationship" class="form-select" @bind="_editingAfm.AFMRelationship" required="@_settings.ReqAFMRelationship">
                                             <option value="">Select</option>
-                                            @foreach (var rel in _relationshipOptions)
+                                            @foreach (var rel in WithSavedOptions(_relationshipOptions, new[] { _editingAfm.AFMRelationship }))
                                             {
-                                                <option value="@rel">@rel</option>
+                                                <option value="@rel.Value">@rel.Text</option>
                                             }
                                         </select>
                                     </div>
@@ -830,9 +848,9 @@
                                     <div class="col-sm-9">
                                         <select id="ddlAFMEthnicity" class="form-select" @bind="_editingAfm.AFMEthnicity" required="@_settings.ReqEthnicity">
                                             <option value=""></option>
-                                            @foreach (var eth in _ethnicityOptions)
+                                            @foreach (var eth in WithSavedOptions(_ethnicityOptions, new[] { _editingAfm.AFMEthnicity }))
                                             {
-                                                <option value="@eth">@eth</option>
+                                                <option value="@eth.Value">@eth.Text</option>
                                             }
                                         </select>
                                     </div>
@@ -857,9 +875,9 @@
                         <div class="col-sm-4">
                             <select id="ddlClientIncome" class="form-select" @bind="_incomeSource">
                                 <option value="">Select Income Source</option>
-                                @foreach (var inc in _incomeOptions)
+                                @foreach (var inc in WithSavedOptions(_incomeOptions, new[] { _incomeSource }))
                                 {
-                                    <option value="@inc">@inc</option>
+                                    <option value="@inc.Value">@inc.Text</option>
                                 }
                             </select>
                         </div>
@@ -878,9 +896,9 @@
                             <div class="col-sm-4">
                                 <select id="ddlClientExpense" class="form-select" @bind="_expenseSource">
                                     <option value="">Select Expense</option>
-                                    @foreach (var exp in _expenseOptions)
+                                    @foreach (var exp in WithSavedOptions(_expenseOptions, new[] { _expenseSource }))
                                     {
-                                        <option value="@exp">@exp</option>
+                                        <option value="@exp.Value">@exp.Text</option>
                                     }
                                 </select>
                             </div>
@@ -1075,9 +1093,13 @@
                         <Label Class="col-sm-3" For="ddlVisitServiceLocation" HelpText="Select Visit Service Location" ResourceKey="lblVisitServiceLocation">Service Location:</Label>
                         <div class="col-sm-9">
                             <select id="ddlVisitServiceLocation" class="form-select" @bind="_editingVisit.ServiceLocation">
-                                @foreach (var loc in _serviceLocationOptions)
+                                @if (string.IsNullOrWhiteSpace(_editingVisit.ServiceLocation))
                                 {
-                                    <option value="@loc">@loc</option>
+                                    <option value=""></option>
+                                }
+                                @foreach (var loc in WithSavedOptions(_serviceLocationOptions, new[] { _editingVisit.ServiceLocation }))
+                                {
+                                    <option value="@loc.Value">@loc.Text</option>
                                 }
                             </select>
                         </div>
@@ -1296,74 +1318,38 @@
 
     // Option Lists (matching DNN Lists)
     private readonly List<string> _clientTypeOptions = new() { "Individual", "Group Home", "Pallet" };
-    private readonly List<string> _serviceLocationOptions = new() { "Pantry", "Mobile Pantry", "Home Delivery" };
-    private readonly List<string> _suffixOptions = new() { "Jr.", "Sr.", "II", "III", "IV" };
-    private readonly List<string> _ethnicityOptions = new()
-    {
-        "American Indian or Alaska Native",
-        "Asian",
-        "Black or African American",
-        "Hispanic or Latino",
-        "Native Hawaiian or Other Pacific Islander",
-        "White / Caucasian",
-        "Two or More Races",
-        "Other / Prefer Not to Answer"
-    };
-    private readonly Dictionary<string, string> _languageOptions = new()
-    {
-        { "en", "English" },
-        { "es", "Spanish" },
-        { "pt", "Portuguese" },
-        { "ht", "Haitian Creole" },
-        { "fr", "French" },
-        { "zh", "Chinese" },
-        { "ar", "Arabic" },
-        { "ru", "Russian" },
-        { "vi", "Vietnamese" },
-        { "ot", "Other" }
-    };
-    private readonly List<string> _townOptions = new()
-    {
-        "Barnstable", "Bourne", "Brewster", "Chatham", "Dennis", "Eastham",
-        "Falmouth", "Harwich", "Mashpee", "Orleans", "Provincetown", "Sandwich",
-        "Truro", "Wellfleet", "Yarmouth"
-    };
-    private readonly Dictionary<string, List<string>> _villagesByTown = new(StringComparer.OrdinalIgnoreCase)
-    {
-        { "Barnstable", new List<string> { "Barnstable", "Centerville", "Cotuit", "Hyannis", "Marstons Mills", "Osterville", "West Barnstable" } },
-        { "Dennis", new List<string> { "Dennis", "Dennis Port", "East Dennis", "South Dennis", "West Dennis" } },
-        { "Falmouth", new List<string> { "East Falmouth", "Falmouth", "North Falmouth", "Teaticket", "Waquoit", "West Falmouth", "Woods Hole" } },
-        { "Harwich", new List<string> { "East Harwich", "Harwich", "Harwich Port", "North Harwich", "Pleasant Lake", "South Harwich", "West Harwich" } },
-        { "Yarmouth", new List<string> { "Bass River", "South Yarmouth", "West Yarmouth", "Yarmouth Port" } }
-    };
-    private readonly List<string> _primaryIncomeSourceOptions = new()
-    {
-        "Employment", "Social Security", "SSI / SSDI", "Pension / Retirement",
-        "Unemployment", "TANF / TAFDC", "Child Support", "Veterans Benefits", "No Income", "Other"
-    };
-    private readonly List<string> _trueFalseQuestionOptions = new()
-    {
-        "SNAP / Food Stamps", "WIC", "Fuel Assistance", "MassHealth / Medicaid",
-        "Public Housing / Section 8", "Free/Reduced School Lunch", "Veteran", "Homeless"
-    };
-    private readonly List<string> _disabilityOptions = new()
-    {
-        "None", "Physical / Mobility", "Visual", "Hearing", "Cognitive / Developmental", "Chronic Illness", "Mental Health"
-    };
-    private readonly List<string> _relationshipOptions = new()
-    {
-        "Spouse", "Partner", "Child", "Stepchild", "Grandchild", "Parent", "Grandparent", "Sibling", "Other Relative", "Non-Relative"
-    };
-    private readonly List<string> _incomeOptions = new()
-    {
-        "Wages / Salary", "Self-Employment", "Social Security", "SSI", "SSDI",
-        "Pension", "Unemployment", "Child Support", "Alimony", "Cash Assistance", "Other Income"
-    };
-    private readonly List<string> _expenseOptions = new()
-    {
-        "Rent / Mortgage", "Property Tax / Condo Fee", "Electric", "Gas / Oil / Heat",
-        "Water / Sewer", "Telephone / Internet", "Medical / Prescriptions", "Child Care", "Transportation", "Other Expense"
-    };
+    private IReadOnlyList<ClientListOption> _serviceLocationOptions = Array.Empty<ClientListOption>();
+    private IReadOnlyList<ClientListOption> _clientServiceLocationOptions = Array.Empty<ClientListOption>();
+    private IReadOnlyList<ClientListOption> _suffixOptions = Array.Empty<ClientListOption>();
+    private IReadOnlyList<ClientListOption> _clientSuffixOptions = Array.Empty<ClientListOption>();
+    private IReadOnlyList<ClientListOption> _ethnicityOptions = Array.Empty<ClientListOption>();
+    private IReadOnlyList<ClientListOption> _languageOptions = Array.Empty<ClientListOption>();
+    private const string OtherCity = "OTHER";
+    private const string SavedCityOption = "saved";
+    private IReadOnlyList<AddressListEntry> _townOptions = Array.Empty<AddressListEntry>();
+    private IReadOnlyList<AddressListEntry> _villageOptions = Array.Empty<AddressListEntry>();
+    private AddressListEntry _selectedCity;
+    private int _villageLoadVersion;
+    private bool _loadingVillages;
+
+    private bool IsOtherCity => AddressValuesMatch(_client.ClientCity, OtherCity);
+    private string SelectedCityOption => IsOtherCity ? OtherCity
+        : _selectedCity?.ListsId.ToString(CultureInfo.InvariantCulture)
+            ?? (string.IsNullOrWhiteSpace(_client.ClientCity) ? string.Empty : SavedCityOption);
+
+    private const int PrimaryIncomeValueMaxLength = 50;
+    private IReadOnlyList<ClientListOption> _primaryIncomeSourceOptions = Array.Empty<ClientListOption>();
+    private IReadOnlyList<ClientListOption> _trueFalseQuestionOptions = Array.Empty<ClientListOption>();
+    private const int DisabilityValueMaxLength = 250;
+    private IReadOnlyList<ClientListOption> _disabilityOptions = Array.Empty<ClientListOption>();
+    private IReadOnlyList<ClientListOption> _relationshipOptions = Array.Empty<ClientListOption>();
+    private IReadOnlyList<ClientListOption> _incomeOptions = Array.Empty<ClientListOption>();
+    private IReadOnlyList<ClientListOption> _expenseOptions = Array.Empty<ClientListOption>();
+
+    private IEnumerable<ClientListOption> TrueFalseQuestionsForEdit =>
+        WithSavedOptions(_trueFalseQuestionOptions, _tfQuestions.Select(question => question.TfQuestion), StringComparer.OrdinalIgnoreCase);
+
+    private sealed record ClientListOption(string Value, string Text);
 
     private bool IsGroupOrPalletClient =>
         string.Equals(_client.ClientType, "Pallet", StringComparison.OrdinalIgnoreCase) ||
@@ -1470,6 +1456,8 @@
                                 UserSecurity.IsAuthorized(PageState.User, _settings.ClientManagerDeleteRecordRole));
 
             await LoadCaseWorkersAsync();
+            await LoadAddressListsAsync();
+            await LoadClientOptionListsAsync();
 
             if (PageState.QueryString.TryGetValue("TabFocus", out var tabFocus) && !string.IsNullOrWhiteSpace(tabFocus))
             {
@@ -1493,6 +1481,8 @@
                 InitializeNewClientDefaults();
             }
 
+            _selectedCity = _townOptions.FirstOrDefault(town => AddressValuesMatch(town.Value, _client.ClientCity));
+            await LoadVillagesAsync(_selectedCity);
             _initialized = true;
         }
         catch (Exception ex)
@@ -1510,9 +1500,9 @@
             IsActive = true,
             IsLocked = false,
             ClientType = "Individual",
-            ServiceLocation = _serviceLocationOptions.FirstOrDefault() ?? "Pantry",
+            ServiceLocation = _clientServiceLocationOptions.FirstOrDefault()?.Value,
             ClientState = !string.IsNullOrWhiteSpace(_settings.FBState) ? _settings.FBState : "MA",
-            ClientLanguage = "en",
+            ClientLanguage = _languageOptions.FirstOrDefault(option => string.Equals(option.Value, "en", StringComparison.OrdinalIgnoreCase))?.Value,
             PrimaryIncomeSource = string.Empty,
             LegacyCaseWorkerUserId = PageState.User?.UserId
         };
@@ -1551,6 +1541,152 @@
         }
     }
 
+    private async Task LoadAddressListsAsync()
+    {
+        var siteId = ModuleState.SiteId;
+        try
+        {
+            var cities = await ListsService.GetListsAsync("City", siteId);
+            _townOptions = cities
+                .Where(city => city.ParentID == 0 && !AddressValuesMatch(city.Value, OtherCity))
+                .DistinctBy(city => city.Value, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (_townOptions.Count == 0)
+            {
+                AddModuleMessage(Localizer["Message.AddressCitiesMissing"], MessageType.Warning);
+            }
+        }
+        catch (Exception ex) when (IsListLoadError(ex))
+        {
+            await logger.LogError(ex, "Error Loading FBClients Address Lists For Site {SiteId}", siteId);
+            AddModuleMessage(Localizer["Message.AddressListsLoadError"], MessageType.Warning);
+        }
+    }
+
+    private async Task LoadVillagesAsync(AddressListEntry city)
+    {
+        var version = ++_villageLoadVersion;
+        _villageOptions = Array.Empty<AddressListEntry>();
+        _loadingVillages = city != null;
+        if (city == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var villages = await ListsService.GetChildListsAsync(city.ListsId, ModuleState.SiteId);
+            if (version == _villageLoadVersion)
+            {
+                _villageOptions = villages.DistinctBy(village => village.Value, StringComparer.OrdinalIgnoreCase).ToList();
+            }
+        }
+        catch (Exception ex) when (IsListLoadError(ex))
+        {
+            await logger.LogError(ex, "Error Loading FBClients Villages For City Entry {CityId}", city.ListsId);
+            if (version == _villageLoadVersion)
+            {
+                AddModuleMessage(Localizer["Message.AddressVillagesLoadError"], MessageType.Warning);
+            }
+        }
+        finally
+        {
+            if (version == _villageLoadVersion)
+            {
+                _loadingVillages = false;
+            }
+        }
+    }
+
+    private static bool IsListLoadError(Exception ex) => ex is HttpRequestException or UnauthorizedAccessException
+        or InvalidOperationException or System.Text.Json.JsonException or System.Data.Common.DbException or OperationCanceledException;
+
+    private async Task LoadClientOptionListsAsync()
+    {
+        if (_settings.ShowSuffix)
+        {
+            _suffixOptions = await LoadClientOptionsAsync("ClientSuffix", 15);
+            _clientSuffixOptions = _suffixOptions.Where(option => option.Value.Length <= 10).ToList();
+        }
+        _serviceLocationOptions = await LoadClientOptionsAsync("ClientServiceLocation", 50);
+        _clientServiceLocationOptions = _serviceLocationOptions.Where(option => option.Value.Length <= 30).ToList();
+
+        if (_settings.ShowEthnicity)
+        {
+            _ethnicityOptions = await LoadClientOptionsAsync("ClientEthnicity", 100);
+        }
+        if (_settings.ShowDisabilities)
+        {
+            _disabilityOptions = await LoadClientOptionsAsync("ClientDisability", DisabilityValueMaxLength, allowCommas: false);
+        }
+        _incomeOptions = await LoadClientOptionsAsync("ClientIncome", 100);
+        if (_settings.ShowPrimaryIncomeSource)
+        {
+            _primaryIncomeSourceOptions = _incomeOptions.Where(option => option.Value.Length <= PrimaryIncomeValueMaxLength).ToList();
+            if (_primaryIncomeSourceOptions.Count < _incomeOptions.Count)
+            {
+                AddModuleMessage(Localizer["Message.PrimaryIncomeOptionsTooLong", PrimaryIncomeValueMaxLength], MessageType.Warning);
+            }
+        }
+        if (_settings.ShowExpense)
+        {
+            _expenseOptions = await LoadClientOptionsAsync("ClientExpense", 100);
+        }
+        _trueFalseQuestionOptions = await LoadClientOptionsAsync("ClientTrueFalseQuestions", 30);
+        if (_settings.ShowRelationshipToClient)
+        {
+            _relationshipOptions = await LoadClientOptionsAsync("ClientAFMRelationship", 25);
+        }
+        _languageOptions = await LoadClientOptionsAsync("ClientLanguage", 2);
+    }
+
+    private async Task<IReadOnlyList<ClientListOption>> LoadClientOptionsAsync(string listName, int maxLength, bool allowCommas = true)
+    {
+        var siteId = ModuleState.SiteId;
+        try
+        {
+            var entries = await ListsService.GetListsAsync(listName, siteId);
+            var options = entries.Select(entry => new ClientListOption(entry.Value?.Trim() ?? string.Empty, entry.Text)).ToList();
+            var validOptions = options.Where(option => option.Value.Length > 0 && option.Value.Length <= maxLength
+                && (allowCommas || !option.Value.Contains(','))).ToList();
+            if (validOptions.Count == 0)
+            {
+                AddModuleMessage(Localizer["Message.ClientOptionsMissing", listName], MessageType.Warning);
+            }
+            else if (validOptions.Count < options.Count)
+            {
+                AddModuleMessage(Localizer["Message.ClientOptionsInvalid", listName], MessageType.Warning);
+            }
+
+            return validOptions.DistinctBy(option => option.Value, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+        catch (Exception ex) when (IsListLoadError(ex))
+        {
+            await logger.LogError(ex, "Error Loading FBClients List {ListName} For Site {SiteId}", listName, siteId);
+            AddModuleMessage(Localizer["Message.ClientOptionsLoadError", listName], MessageType.Warning);
+            return Array.Empty<ClientListOption>();
+        }
+    }
+
+    private static IEnumerable<ClientListOption> WithSavedOptions(IReadOnlyList<ClientListOption> options,
+        IEnumerable<string> savedValues, StringComparer comparer = null)
+    {
+        var shown = new HashSet<string>(comparer ?? StringComparer.Ordinal);
+        foreach (var option in options)
+        {
+            shown.Add(option.Value);
+            yield return option;
+        }
+        foreach (var value in savedValues)
+        {
+            if (!string.IsNullOrWhiteSpace(value) && shown.Add(value))
+            {
+                yield return new ClientListOption(value, value);
+            }
+        }
+    }
+
     private async Task LoadClientAndRelatedDataAsync()
     {
         var loadedClient = await ClientFBClientsService.GetFBClientsAsync(_id, ModuleState.ModuleId);
@@ -1567,11 +1703,7 @@
         }
         if (string.IsNullOrWhiteSpace(_client.ServiceLocation))
         {
-            _client.ServiceLocation = _serviceLocationOptions.FirstOrDefault() ?? "Pantry";
-        }
-        if (!string.IsNullOrWhiteSpace(_client.ClientCity) && !_townOptions.Contains(_client.ClientCity, StringComparer.OrdinalIgnoreCase) && !string.Equals(_client.ClientCity, "OTHER", StringComparison.OrdinalIgnoreCase))
-        {
-            _townOptions.Add(_client.ClientCity);
+            _client.ServiceLocation = _clientServiceLocationOptions.FirstOrDefault()?.Value;
         }
 
         _selectedDisabilities.Clear();
@@ -1594,10 +1726,6 @@
         foreach (var q in _tfQuestions)
         {
             _tfQuestionAnswers[q.TfQuestion] = q.TfAnswer;
-            if (!_trueFalseQuestionOptions.Contains(q.TfQuestion, StringComparer.OrdinalIgnoreCase))
-            {
-                _trueFalseQuestionOptions.Add(q.TfQuestion);
-            }
         }
 
         // Photo resolution (IDPhoto first, fallback to ClientPhoto, then Oqtane IDCardImagePath folder)
@@ -1817,20 +1945,25 @@
         RecalculateHeaderAndValidation();
     }
 
-    private void OnClientCityChanged(ChangeEventArgs e)
+    private async Task OnClientCityChangedAsync(string option)
     {
-        _client.ClientCity = e.Value?.ToString() ?? string.Empty;
+        if (option == SelectedCityOption)
+        {
+            return;
+        }
+
+        _selectedCity = int.TryParse(option, NumberStyles.None, CultureInfo.InvariantCulture, out var cityId)
+            ? _townOptions.FirstOrDefault(town => town.ListsId == cityId)
+            : null;
+        _client.ClientCity = option == OtherCity ? OtherCity : _selectedCity?.Value ?? string.Empty;
         _client.ClientTown = string.Empty;
+        await LoadVillagesAsync(_selectedCity);
     }
 
-    private IEnumerable<string> GetVillageOptionsForCity(string city)
-    {
-        if (!string.IsNullOrWhiteSpace(city) && _villagesByTown.TryGetValue(city, out var villages))
-        {
-            return villages;
-        }
-        return !string.IsNullOrWhiteSpace(city) ? new[] { city } : Array.Empty<string>();
-    }
+    private void OnClientVillageChanged(string village) => _client.ClientTown = village;
+
+    private static bool AddressValuesMatch(string left, string right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 
     private void SetClientVerifiedToday()
     {
@@ -1896,6 +2029,11 @@
             _client.ClientZipCode = _client.ClientZipCode?.Trim();
             _client.PrimaryIncomeSource ??= string.Empty;
             _client.Disability = string.Join(", ", _selectedDisabilities);
+            if (_client.Disability.Length > DisabilityValueMaxLength)
+            {
+                AddModuleMessage(Localizer["Message.DisabilitySelectionTooLong", DisabilityValueMaxLength], MessageType.Warning);
+                return;
+            }
 
             if (_id <= 0)
             {
@@ -1926,15 +2064,16 @@
 
     private async Task SaveTrueFalseQuestionsAsync(int clientId)
     {
-        foreach (var q in _trueFalseQuestionOptions)
+        foreach (var question in TrueFalseQuestionsForEdit)
         {
-            var answer = GetTfAnswer(q);
-            if (answer || _tfQuestions.Any(x => string.Equals(x.TfQuestion, q, StringComparison.OrdinalIgnoreCase)))
+            var answer = GetTfAnswer(question.Value);
+            var existing = _tfQuestions.FirstOrDefault(q => string.Equals(q.TfQuestion, question.Value, StringComparison.OrdinalIgnoreCase));
+            if (answer || existing != null)
             {
                 await ClientFBClientsService.SaveFBClientsTrueFalseQuestionAsync(new FBClientsTrueFalseQuestions
                 {
                     FBClientsId = clientId,
-                    TfQuestion = q,
+                    TfQuestion = existing?.TfQuestion ?? question.Value,
                     TfAnswer = answer
                 }, ModuleState.ModuleId);
             }
@@ -2226,19 +2365,11 @@
         _editingIeId = item.IeId;
         if (string.Equals(item.IeType, "IN", StringComparison.OrdinalIgnoreCase))
         {
-            if (!_incomeOptions.Contains(item.IeDescription, StringComparer.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(item.IeDescription))
-            {
-                _incomeOptions.Add(item.IeDescription);
-            }
             _incomeSource = item.IeDescription ?? string.Empty;
             _incomeAmountInput = item.IeAmount;
         }
         else
         {
-            if (!_expenseOptions.Contains(item.IeDescription, StringComparer.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(item.IeDescription))
-            {
-                _expenseOptions.Add(item.IeDescription);
-            }
             _expenseSource = item.IeDescription ?? string.Empty;
             _expenseAmountInput = item.IeAmount;
         }
@@ -2459,7 +2590,7 @@
             VisitNumBags = _qualifiesForBags,
             ServiceLocation = !string.IsNullOrWhiteSpace(_client.ServiceLocation)
                 ? _client.ServiceLocation
-                : (_serviceLocationOptions.FirstOrDefault() ?? "Pantry"),
+                : _serviceLocationOptions.FirstOrDefault()?.Value ?? string.Empty,
             OrderStatusCode = 0
         };
         _repeatInsertCount = 1;
@@ -2516,7 +2647,7 @@
             }
 
             _editingVisit.FBClientsId = _id;
-            _editingVisit.ServiceLocation ??= "Pantry";
+            _editingVisit.ServiceLocation ??= string.Empty;
 
             if (_editingVisit.VisitId > 0)
             {

@@ -394,7 +394,13 @@
     <value>Client Order Page:</value>
   </data>
   <data name="lblClientOrderPage.HelpText" xml:space="preserve">
-    <value>HTTPS URL prefix. The visit-client key is appended, as in the DNN module. For example, https://your-site.example/food-order?key= becomes https://your-site.example/food-order?key=123-456.</value>
+    <value>For FBClients Ordering, enter the HTTPS page URL without ?key=. For an existing external handler, enter its HTTPS URL prefix.</value>
+  </data>
+  <data name="lblOrderingModuleId.Text" xml:space="preserve">
+    <value>Ordering Module ID:</value>
+  </data>
+  <data name="lblOrderingModuleId.HelpText" xml:space="preserve">
+    <value>Use the ID displayed in FBClients Ordering settings. Use 0 only for an existing external order handler.</value>
   </data>
   <data name="lblTwilioAccountSid.Text" xml:space="preserve">
     <value>Twilio AccountSid:</value>

@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
     <metadata>
         <id>$projectname$</id>
-        <version>1.0.0</version>
+        <version>1.0.4</version>
         <authors>GIBS</authors>
         <owners>GIBS</owners>
         <title>FBClients</title>
@@ -17,7 +17,7 @@
         <summary></summary>
         <packageTypes>
             <packageType name="Dependency" />
-            <packageType name="Oqtane.Framework" version="10.3.1" />
+            <packageType name="Oqtane.Framework" version="11.0.0" />
         </packageTypes>
     </metadata>
     <files>
@@ -29,11 +29,13 @@
         <file src="..\Server\bin\Release\$targetframework$\Newtonsoft.Json.dll" target="lib\$targetframework$" />
         <file src="..\Shared\bin\Release\$targetframework$\$ProjectName$.Shared.Oqtane.dll" target="lib\$targetframework$" />
         <file src="..\Shared\bin\Release\$targetframework$\$ProjectName$.Shared.Oqtane.pdb" target="lib\$targetframework$" />
-        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\msbuild.$ProjectName$.Microsoft.AspNetCore.StaticWebAssetEndpoints.props" target="build\Microsoft.AspNetCore.StaticWebAssetEndpoints.props" />
-        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\msbuild.$ProjectName$.Microsoft.AspNetCore.StaticWebAssets.props" target="build\Microsoft.AspNetCore.StaticWebAssets.props" />
-        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\msbuild.build.$ProjectName$.props" target="build\$ProjectName$.props" />
-        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\msbuild.buildMultiTargeting.$ProjectName$.props" target="buildMultiTargeting\$ProjectName$.props" />
-        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\msbuild.buildTransitive.$ProjectName$.props" target="buildTransitive\$ProjectName$.props" />
+        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\$ProjectName$.Server.Oqtane.PackageAssets.json" target="build\$ProjectName$.Server.Oqtane.PackageAssets.json" />
+        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\msbuild.$ProjectName$.Server.Oqtane.Microsoft.AspNetCore.StaticWebAssets.targets" target="build\Microsoft.AspNetCore.StaticWebAssets.targets" />
+        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\msbuild.build.$ProjectName$.Server.Oqtane.targets" target="build\$ProjectName$.targets" />
+        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\msbuild.build.$ProjectName$.Server.Oqtane.targets" target="build\$ProjectName$.Server.Oqtane.targets" />
+        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\msbuild.buildMultiTargeting.$ProjectName$.Server.Oqtane.targets" target="buildMultiTargeting\$ProjectName$.targets" />
+        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\msbuild.buildMultiTargeting.$ProjectName$.Server.Oqtane.targets" target="buildMultiTargeting\$ProjectName$.Server.Oqtane.targets" />
+        <file src="..\Server\obj\Release\$targetframework$\staticwebassets\msbuild.buildTransitive.$ProjectName$.Server.Oqtane.targets" target="buildTransitive\$ProjectName$.targets" />
         <file src="..\Server\wwwroot\**\*.*" target="staticwebassets" />
         <file src="icon.png" target="" />
     </files>

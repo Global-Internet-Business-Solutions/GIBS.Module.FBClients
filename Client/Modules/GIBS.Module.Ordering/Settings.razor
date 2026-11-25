@@ -1,0 +1,39 @@
+@namespace GIBS.Module.FBClients.Ordering
+@using System.Globalization
+@using GIBS.Module.FBClients.Inventory
+@inherits ModuleBase
+@implements ISettingsControl
+@inject ISettingService SettingService
+@inject IStringLocalizer<Settings> Localizer
+
+<p>@Localizer["Use Ordering Module ID {0} in the FBClients text settings.", ModuleState.ModuleId]</p>
+<label class="form-label" for="food-order-inventory">@Localizer["Inventory Module ID"]</label>
+<input id="food-order-inventory" type="number" min="1" class="form-control" aria-describedby="food-order-inventory-help"
+       @bind="_inventoryModuleId" disabled="@(!_ready)" />
+<div id="food-order-inventory-help" class="form-text">
+    @Localizer["Use the ID shown in an FBClients Inventory module on this site."]
+</div>
+
+@code {
+    public override string Title => "Ordering Settings";
+
+    private int? _inventoryModuleId;
+    private bool _ready;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settings = await SettingService.GetModuleSettingsAsync(ModuleState.ModuleId);
+        var value = SettingService.GetSetting(settings, InventoryModule.OrderingSettingName, "");
+        _inventoryModuleId = int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id : null;
+        _ready = true;
+    }
+
+    public async Task UpdateSettings()
+    {
+        if (!_ready) throw new InvalidOperationException(Localizer["Ordering settings have not loaded."]);
+        if (_inventoryModuleId is null or <= 0) throw new InvalidOperationException(Localizer["Enter a positive Inventory Module ID."]);
+        var settings = await SettingService.GetModuleSettingsAsync(ModuleState.ModuleId);
+        settings = SettingService.SetSetting(settings, InventoryModule.OrderingSettingName, _inventoryModuleId.Value.ToString(CultureInfo.InvariantCulture));
+        await SettingService.UpdateModuleSettingsAsync(settings, ModuleState.ModuleId);
+    }
+}
